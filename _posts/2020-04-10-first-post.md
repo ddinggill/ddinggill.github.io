@@ -1,0 +1,42 @@
+---
+title: "Annotation, properties, ES Post"
+date: 2017-10-20 08:26:28 -0400
+categories: test
+---
+
+-Annotation 정리
+1. @Component는 개발자가 직접 작성한 Class를 Bean으로 만드는 것이고,
+   @Bean은 개발자가 작성한 Method를 통해 반환되는 객체를 Bean으로 만드는 것이다.(@Bean method를 작성하는 클래스는 보통 @Configuration으로)
+   ex)ES설정관련 @Configuration클래스에서 @Bean로 TransportClient,RestHighLevelClient 를 생성해서 빈으로 등록하고, ES매니저클래스에서는 생성자에 객체를 @Autowired 주입해서 사용
+
+2. 의존성 주입관련(@Autowired, @Resource, @Inject)
+ @Resource - Java에서 지원하는 어노테이션, 이름으로 연결하고 안되면 타입, 프레임워크에 종속적이지 않아 많이 사용
+ @Autowired - Spring Framework에서 지원하는 어노테이션 프레임워크에 종속적, 타입으로 연결하고 안되면 이름(타입으로 연결하기때문에 같은 타입이 여러개 있으면 에러, 강제연결할 경우는 @Qualifier 사용)
+ @Inject - 자바에서 지원하는 어노테이션, 프레임워크에 종속적이지 않다. @Resource랑 다를게 없지만 자바에서 지원하는데 타입으로 연결한다는 점,
+ 왠만하면 @Resource쓰자
+ @Component - Spring에서 관리되는 객체임을 표시하기 위해 사용하는 가장 기본적인 annotation이다. 즉, scan-auto-detection과 dependency injection을 사용하기 위해서 사용되는 가장 기본 어노테이션이다.
+ @Repository - 다 알고 있듯이 data repository를 나타내는 어노테이션이다. @Repository는 플랫폼 특정 exception을 잡아 Spring의 unchecked exception으로 뱉어내준다. ( PersistenceExceptionTranslationPostProcessor )
+ @Service - 비즈니스 로직이나 respository layer 호출하는 함수에 사용된다. 다른 어노테이션과 다르게 @Component에 추가된 기능은 없다. 하지만 나중에 Spring 측에서 추가적인 exception handling을 해줄 수도 있으니 비즈니스 로직에는 해당 어노테이션을 사용하자.
+ 
+-properties 관련
+1. resource에 있는 application.properties파일은 스프링부트가 애플리케이션을 구동할 때 자동으로 로딩되는 파일
+2. 추가로 xxx.properties파일을 추가하여 사용할 수도 있다.
+3. properties파일로 추가한 값들은 @Value 어노테이션을 사용하여 쓸 수 있다. ex)@Value("${rmi.port: 38088}") properties파일에 rmi.port값이 없으면 38088로 주입
+
+-ES 관련
+1. ES 클러스터링 elasticsearch.yml 설정
+ cluster.name 값을 똑같이 하고, node.dame을 각각 다르게 설정
+ network.host는 접속 허용할 IP를 설정(즉, WAS에서 es접속할거면 es서버 아이피를)
+ http.port는 es에 접속할수 있는 http(rest)api 방식의 호출을 위한 포트(default 9200)
+ trans.tcp.port는 es에 접속할수 있는 기존 예전 TCP방식의 클라이언트가 접속하기 위한 포트(default 9300)
+ discovery.zen.ping.unicast.hosts는 클러스트에 등록될 노드들의 주소아이피 ex)discovery.zen.ping.unicast.hosts: ["192.168.10.252:9301", "192.168.10.252:9302", "192.168.10.253:9303"]
+ discovery.zen.minimum_master_nodes : 마스터 노드의 선출 기준이 되는 노드의 수를 지정
+
+2. Java에서 ES접속해서 사용하기(참고 https://coding-start.tistory.com/172?category=757916)
+ 기존방식인 TransportClient(Netty) -초기부터 제공되던 클라이언트 방식으로 빠른속도를 보장,소켓을 사용하여 ES와 통신, 내부적으로 Netty모듈 사용
+								이걸 사용하면 elasticsearch-sql 라이브러리 사용가능해서 sql쿼리문으로 es를 사용가능 https://github.com/NLPchina/elasticsearch-sql
+								소켓TCP방식이기 떄문에 접속포트는 elasticsearch.yml의 trans.tcp.port값과 일치해야한다.
+ REST방식인 RestHighLevelClient -HTTP방식을 이용해 엘라스틱 서치와 통신, 내부적으로 HttpClient모듈을 사용, HTTPS 사용이 가능
+								HTTPREST방식이기 떄문에 접속포트는 elasticsearch.yml의 http.port값과 일치해야한다.
+
+
