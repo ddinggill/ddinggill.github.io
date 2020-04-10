@@ -1,0 +1,320 @@
+-Adapter상태 체크
+ 아답터 정보를 가지고와서 타입에 따라서 그 상태가 유효한지 체크
+
+1. JDBC타입 - JdbcTemplate을 이용하여 기본 쿼리날려서 화인
+ 	//빈 ID를 이용해서 application context에 있는 DataSource를 가져와
+	//JdbcTemplate에 DataSource를 주입
+	DataSource dataSource = CamelHelper.getInstance().getContext().getBean(beanId + "_source", DataSource.class);
+	JdbcTemplate template = new JdbcTemplate(dataSource);
+	template.setQueryTimeout(JDBCTEMPLATE_QUERY_TIMEOUT_SECOND);
+	
+	//Exception이 발생하면 상태에러
+	try {
+			template.execute(sql);
+			paraMap.put("ADAPTER_STAT_CD", "A");
+			adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+			resMap.put("result", "A");
+			resMap.put("errorMsg", "");
+		} catch (Exception e) {
+			LOG.debug("[JDBC Connection Fail] BeanId: " + beanId + " swCode: " + swCD);
+			paraMap.put("ADAPTER_STAT_CD", "E");
+			adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+			resMap.put("result", "E");
+			resMap.put("errorMsg", e.getMessage());
+			e.printStackTrace();
+		}
+		
+2. SAP타입 - 정의한 SapServer객체를 가지고 확인
+	//BeanId를 이용해  context에서 sapServer정보를 가져와
+	//sapServer의 destination을 얻는다.
+	// 20200319 강신석 수정 - SAP Server Adapter의 타입에 따라 SapServer 인스턴스를 달리 얻는다.
+	// -> Sap Client Adapter일때는 BeanId에서 바로 얻고, Sap Server Adapter일때는 (Properties)에서 SapServer를 생성한다.
+	SapServer sapServer = null;
+	Object sapServerObject = CamelHelper.getInstance().getContext().getBean(beanId);
+	if(sapServerObject instanceof SapServer) sapServer = (SapServer)sapServerObject;
+	else if(sapServerObject instanceof Properties) {
+		Properties sapListenerProp = (Properties)sapServerObject;
+		String host = sapListenerProp.getProperty("ashost");
+		String server_num = sapListenerProp.getProperty("sysnr");
+		String client = sapListenerProp.getProperty("client");
+		String user = sapListenerProp.getProperty("user");
+		String password = sapListenerProp.getProperty("passwd");
+		String language = sapListenerProp.getProperty("lang");
+		sapServer = new SapServer(host, server_num, client, user, password, language);
+	}
+	
+	try {
+			JCoDestination destination = sapServer.getDestination();
+			JCoRepository repository = destination.getRepository();
+			if(repository != null) paraMap.put("ADAPTER_STAT_CD", "A");
+			else paraMap.put("ADAPTER_STAT_CD", "E");
+			adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+			resMap.put("result", "A");
+			resMap.put("errorMsg", "");
+		} catch(Exception e) {
+			LOG.debug("[Connect to SAP gateway failed] BeanId: " + beanId);
+			paraMap.put("ADAPTER_STAT_CD", "E");
+			adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+			resMap.put("result", "E");
+			resMap.put("errorMsg", e.getMessage());
+			e.printStackTrace();
+		}
+	
+//정의한 SapServer객체
+@Component("sapServer")
+public class SapServer {
+
+	private static final Logger LOG = LoggerFactory.getLogger(SapServer.class);
+	
+	private JCoDestination destination = null;
+	
+	private String DESTNAME;
+	
+	// get SAP JCO destination
+	public JCoDestination getDestination() throws JCoException {
+		return JCoDestinationManager.getDestination(DESTNAME);
+		//return destination;
+	}
+
+	public SapServer() {
+		// default constructor
+	}
+	public SapServer(String host, String server_num, String client, String user, String password, String language) {
+		try {
+			//String host = "10.109.137.29", server_num = "00", client = "310", user = "DIHGCD", password = "Genesis0918#", language = "en";
+			SAP_SERVER sap_server = new SAP_SERVER(host, server_num, client, user, password, language);
+			
+			DESTNAME = String.format("%s_%s_%s", sap_server.getClient(), sap_server.getSystem_number(), sap_server.getUser() );
+			Properties properties = sap_server.getSapProperties();
+			createDataFile(DESTNAME, "jcoDestination", properties);
+
+			destination = JCoDestinationManager.getDestination(DESTNAME);
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+			LOG.error("[SapServer] >> SapServer :: Error > " + CommonUtils.getPrintStackTrace(e));
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : SAP Destination config file을 생성한다.
+	 * 2. 처리내용 : 기본 폴더에 ***.jcoDestination 파일 생성함
+	 * </pre>
+	 * @Method Name : createDataFile
+	 */
+	private static void createDataFile (String name, String suffix, Properties properties) throws Exception {
+		File cfg = new File(name + "." + suffix);
+		cfg.delete();
+		try {
+			FileOutputStream fso = new FileOutputStream(cfg, false);
+			properties.store(fso, "");
+			fso.close();
+		} catch (Exception e) {
+			throw new XConnectEaiServerException("Unable to create the destination file " + cfg.getName(), XConnectEaiServerException.SAP_CREATE_DESTINATION_FAIL);
+		}
+	}
+
+	// SAP Server Info class
+	public static class SAP_SERVER {
+		private String host = "";
+		private String system_number = "";
+		private String client = "";
+		private String user = "";
+		private String password = "";
+		private String language = "";
+		
+		private Properties properties = new Properties();
+		
+		// prevent default constructor
+		@SuppressWarnings("unused")
+		private SAP_SERVER() {}
+		
+		public SAP_SERVER(String host, String sysNo, String client, String user, String password, String language) {
+			this.host = host;
+			this.system_number = sysNo;
+			this.client = client;
+			this.user = user;
+			this.password = password;
+			this.language = language;
+			
+			properties.setProperty(DestinationDataProvider.JCO_ASHOST, this.host);
+			properties.setProperty(DestinationDataProvider.JCO_SYSNR, this.system_number);
+			properties.setProperty(DestinationDataProvider.JCO_CLIENT, this.client);
+			properties.setProperty(DestinationDataProvider.JCO_USER, this.user);
+			properties.setProperty(DestinationDataProvider.JCO_PASSWD, this.password);
+			properties.setProperty(DestinationDataProvider.JCO_LANG, this.language);
+		}
+		
+		public Properties getSapProperties() {
+			return properties;
+		}
+
+		public String getHost() {
+			return host;
+		}
+		public String getSystem_number() {
+			return system_number;
+		}
+		public String getClient() {
+			return client;
+		}
+		public String getUser() {
+			return user;
+		}
+	}
+}
+	
+3. HTTP,SOAP타입 -  url을 xml에서 파싱해서 socket connect로 확인
+	//bean_script에서 targetUrl을 파싱
+	String restAdapterString = bean_script;
+	restAdapterString = restAdapterString.replace("\r\n", "");
+	String regex = ".*(jetty://https?):\\/\\/([^:\\/\\s]+)(:([^\\/]*))?((\\/[^\\s/\\/]+)*)?(\\\").*";
+	Pattern urlPattern = Pattern.compile(regex);
+	Matcher mc = urlPattern.matcher(restAdapterString);
+	String targetUrl = "";
+	if(mc.matches()) {
+		LOG.info("[AdapterHealthChecker] >> sapTypeHandler() Http Url Pattern Match!");
+		String groupStr = mc.group();
+		String preRemoveStr = groupStr.substring(groupStr.indexOf("jetty://http"));
+		String postRemoveStr = preRemoveStr.substring(0, preRemoveStr.indexOf("\""));
+		targetUrl = postRemoveStr.substring(postRemoveStr.indexOf("http"));
+	}
+	
+	URL url = new URL(targetUrl);
+	String host = url.getHost();
+	int port = url.getPort();
+	Socket socket = new Socket();
+	SocketAddress addr = new InetSocketAddress(host, port);
+	Map<String, Object> paraMap = new HashMap<String, Object>();
+	paraMap.put("SYSTEM_NO", system_no);
+	paraMap.put("ADAPTER_NO", adapter_no);
+
+	try {
+		socket.connect(addr, ADAPTER_SOCKET_CONNECT_TIMEOUT_MILLISECOND);
+		paraMap.put("ADAPTER_STAT_CD", "A");
+		adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+
+		resMap.put("result", "A");
+		resMap.put("errorMsg", "");
+	} catch(Exception e) {
+		LOG.debug("[Connect to HTTP failed] : targetUrl: " + targetUrl);
+		paraMap.put("ADAPTER_STAT_CD", "E");
+		adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+		resMap.put("result", "E");
+		resMap.put("errorMsg", e.getMessage());
+		e.printStackTrace();
+	}
+	//꼭 close해야한다 소켓은!!
+	socket.close();
+
+4. FTP타입 - FTP컴포넌트의  SFtpServer.connect()를 이용하여 연결확인
+	//BeanId를 이용해  context에서 SFtpServer정보를 가져와 connect()함수 실행
+	SFtpServer sFtpServer = CamelHelper.getInstance().getContext().getBean(beanId, SFtpServer.class);
+	try {
+		sFtpServer.connect();
+		paraMap.put("ADAPTER_STAT_CD", "A");
+		adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+		resMap.put("result", "A");
+		resMap.put("errorMsg", "");
+	} catch(Exception e) {
+		LOG.debug("[Connect to SFTP connect() failed] BeanId: " + beanId);
+		paraMap.put("ADAPTER_STAT_CD", "E");
+		adapterStatusCheckDAO.updateAdapterStatus(paraMap);
+		resMap.put("result", "E");
+		resMap.put("errorMsg", e.getMessage());
+		e.printStackTrace();
+	}
+	//disconnect꼭 해야한다.
+	try {
+		sFtpServer.disconnect();
+	} catch(Exception e) {}
+	
+	//정의한 SFTP Server 객체
+	public class SFtpServer {
+
+	private static final Logger LOG = LoggerFactory.getLogger(SFtpServer.class);
+
+	private Session session = null;
+	private Channel channel = null;
+	private ChannelSftp channelSftp = null;
+
+	//////////////////////////////////
+	private String host;
+	private int port;
+	private String userName;
+	private String password;
+	private boolean isSFtp;
+	//////////////////////////////////
+	
+	public SFtpServer() {
+		//
+	}
+	
+	// Getter & Setter
+	public void setHost(String host) {
+		this.host = host;
+	}
+	public void setPort(int port) {
+		this.port = port;
+	}
+	public void setUserName(String userName) {
+		this.userName = userName;
+	}
+	public void setPassword(String password) {
+		this.password = password;
+	}
+	public void setIsSFtp(boolean isSFtp) {
+		this.isSFtp = isSFtp;
+	}
+
+	public SFtpServer(String host, int port, String userName, String password, boolean isSFtp) {
+		try {
+			this.host = host;
+			this.port = port;
+			this.userName = userName;
+			this.password = password;
+			this.isSFtp = isSFtp;
+		} catch (Exception e) {
+			throw e;
+		}
+	}
+	
+	public void connect() throws Exception {
+		JSch jsch = new JSch();
+		try {
+			// 세션객체 생성 ( user , host, port )
+			session = jsch.getSession(userName, host, port);
+
+			// password 설정
+			session.setPassword(password);
+			// 세션관련 설정정보 설정
+			java.util.Properties config = new java.util.Properties();
+			// 호스트 정보 검사 option = no
+			config.put("StrictHostKeyChecking", "no");
+			session.setConfig(config);
+
+			// 접속 (10초 timeout)
+			session.connect(20 * 1000);
+			// sftp 채널 접속
+			if(isSFtp) channel = session.openChannel("sftp");
+			else channel = session.openChannel("ftp");
+			channel.connect();
+
+			channelSftp = (ChannelSftp) channel;
+		} catch (JSchException e) {
+			e.printStackTrace();
+			throw e;
+		}
+	}
+	
+	public void disconnect() throws Exception {
+		try {
+			channelSftp.quit();
+			session.disconnect();
+		} catch(Exception e) {
+			//e.printStackTrace();
+			//throw e;
+		}
+	}
