@@ -1,0 +1,42 @@
+-SpringBean Manager
+
+1. 현재 ConfigurableApplicationContext을 가져온다.
+ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+String bean_xml = "xml파일 bean 내용 등록";
+
+int bean_regist_count = 0;
+
+2. String에서 ByteArrayResource을 추출
+ByteArrayResource resource = new ByteArrayResource(bean_xml.getBytes("UTF-8"), "test bean");
+ 
+3. 현재 ConfigurableApplicationContext에서 BeanDefinitionRegistry 추출
+BeanDefinitionRegistry beanDefinitionRegistry = (BeanDefinitionRegistry) ctx.getAutowireCapableBeanFactory();
+
+//현재 컨텍스트의 빈 갯수 (ex:108)
+System.out.println("getBeanDefinitionCount: " + beanDefinitionRegistry.getBeanDefinitionCount());
+
+4. XmlBeanDefinitionReader 생성
+XmlBeanDefinitionReader reader = new XmlBeanDefinitionReader(beanDefinitionRegistry);
+
+5. file에서 <bean>등록, 등록한 갯수 반환(ex:2개)
+bean_regist_count = reader.loadBeanDefinitions(resource);
+System.out.println("bean_regist_count: " + bean_regist_count);
+
+//현재 컨텍스트의 빈 갯수 (ex:110)
+System.out.println("getBeanDefinitionCount: " + beanDefinitionRegistry.getBeanDefinitionCount());
+
+//모든 빈 이름 출력		
+for(String beanname : beanDefinitionRegistry.getBeanDefinitionNames()) {
+
+	System.out.println("bean name: " + beanname);
+
+}
+
+//빈 삭제			
+beanDefinitionRegistry.removeBeanDefinition("serverBasicDataSourcesTest2");
+System.out.println("getBeanDefinitionCount: " + beanDefinitionRegistry.getBeanDefinitionCount());
+for(String beanname : beanDefinitionRegistry.getBeanDefinitionNames()) {
+
+	System.out.println("bean name: " + beanname);
+
+}
