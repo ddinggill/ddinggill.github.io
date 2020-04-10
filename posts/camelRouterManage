@@ -1,0 +1,69 @@
+-CamelRouter Manager
+
+1. 현재 돌아가고 있는 카멜컨텍스트를 가져온다.
+ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+CamelContext camel_ctx = (CamelContext) ctx.getBean(SystemCommonConstants.CAMEL_CONTEXT_ID);
+
+2. xml 파일로 된 라우터 설정 파일을 읽어서 설정된 라우터 목록을 받아온다.(여러개 가능)
+String bean_xml = "<routes xmlns=\"http://camel.apache.org/schema/spring\">\r\n" + 
+					"    <route id=\"test_route\">\r\n" + 
+					"        <from uri=\"timer:bar?period=1000\"/>\r\n" + 
+					"        <log message=\"bar routes.....\" />" +
+					"    </route>\r\n" + 
+//					"	 <route id=\"route1\">\r\n" + 
+//					"        <from uri=\"timer:bar1?period=1000\"/>\r\n" + 
+//					"        <log message=\"bar1 routes.....\" />" +
+//					"    </route>\r\n" +
+					"</routes>";
+
+RoutesDefinition routes = camel_ctx.loadRoutesDefinition(new ByteArrayInputStream(bean_xml.getBytes("UTF-8"))); 
+List<RouteDefinition> routeList = routes.getRoutes(); 
+
+3. 라우터 등록,실행,중지,삭제 작업등 수행
+for(RouteDefinition route : routeList) {
+
+	RouteDefinitionHelper.sanityCheckRoute(route);
+	System.out.println("##1: " + route.getId());
+	camel_ctx.addRouteDefinition(route);
+	System.out.println("##2: " + route.getId());
+	camel_ctx.startRoute(route.getId());
+}
+
+Thread.sleep(3000*3);
+System.out.println("라우터 스탑하자");
+camel_ctx.stopRoute("test_route");
+camel_ctx.removeRoute("test_route");
+Thread.sleep(3000*3);
+System.out.println("라우터 다시시작하자");
+camel_ctx.startRoute("test_route");
+
+4. Camel Router Thread Pool 설정
+List<ProcessorDefinition<?>> outputs = route.getOutputs();
+ThreadsDefinition td = new ThreadsDefinition();
+if(CommonUtils.strNvl(devRunningIfInfo.get("TR_POOL_USE_YN"), "D").equalsIgnoreCase("Y")) {
+	td.setPoolSize(trMin);
+	td.setMaxPoolSize(trMax);
+} else {
+	td.setPoolSize(1);
+	td.setMaxPoolSize(1);
+}
+td.setId("ThreadPool-" + route.getId());
+for(ProcessorDefinition<?> output : outputs)  td.addOutput(output);
+route.clearOutput();
+route.addOutput(td);
+
+5. Route Exception Handler 설정
+route.onException(Exception.class, XConnectEaiServerException.class)
+.handled(true)
+.process(ctx.getBean(SystemCommonConstants.CAMEL_ERROR_HANDLER_ID, ExceptionProcessor.class));
+
+//핸들러 설정 끝나고 라우터 체크하고 라우터 등록하고 실행
+RouteDefinitionHelper.sanityCheckRoute(route);
+camel_ctx.addRouteDefinition(route);
+camel_ctx.startRoute(route.getId());
+
+6. 라우터 아이디로 상태확인
+CamelContext camelCtx = this.getContext().getBean(SystemCommonConstants.CAMEL_CONTEXT_ID, CamelContext.class);
+RouteDefinition logListener = camelCtx.getRouteDefinition(SystemCommonConstants.CAMEL_LOG_LISTENER_ROUTE_ID);
+ServiceStatus status = logListener.getStatus(camelCtx);
+status.isStarted() / status.isStopped() / status.isSuspended() 등등으로 상태확인
