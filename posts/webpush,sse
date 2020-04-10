@@ -1,0 +1,211 @@
+-SSE 이용한 WebPush(Server Sent Event)
+ 
+1. Server side
+ -WebPushController(@RestController)
+    //클라이언트에서 연결해서 SseEmitter 등록시 SseEmitter의 유지시간
+	private static final long TIME_OUT_MS = 12 * 60 * 60 * 1000;
+	
+	@Autowired
+	ApplicationEventHandler applicationEventHandler;
+	
+	//클라이언트 연결요청시 emitters에 SseEmitter, pushType, sessionId등록
+	@GetMapping(path = "/push/interface_log_push", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	SseEmitter getLogPush(HttpServletRequest request, HttpSession session ) {
+		LOG.debug("=======================================================================");
+		LOG.debug("[WebPushController] >> getLogPush :: Client Request!! ");
+		LOG.debug("=======================================================================");
+		return applicationEventHandler.addSseEmitter(new SseEmitter(TIME_OUT_MS) , SseEmitters.PUSH_TYPE_INTERFACE_LOG, session.getId());
+	}
+	
+ -ApplicationEventHandler(@Component) - 실제메시지 발생시킬 곳에서 이 컴포넌트를 변수등록하여 ApplicationEventHandler.sendMsg(메시지)로 호출
+	//org.springframework.context.ApplicationEventPublisher
+	@Autowired
+    ApplicationEventPublisher publisher;	
+	
+	private final SseEmitters emitters = new SseEmitters();
+	
+	@EventListener
+    public void applicationEventHandler(Object event) {
+        // ... 이벤트객체 타입에 따른 이벤트 처리
+		if(event instanceof IfLogPushMessageVO) {
+			LOG.debug("[ApplicationEventHandler] >> applicationEventHandler :: interface log event message = " + event);
+			emitters.send(event);
+		} else if(event instanceof SvrResourcePushMessageVO) {
+			LOG.debug("[ApplicationEventHandler] >> applicationEventHandler :: server resource event message = " + event);
+			emitters.send(event);
+		} else if(event instanceof SvrRsrcStatusPushMessageVO) {
+			LOG.debug("[ApplicationEventHandler] >> applicationEventHandler :: server resource status event message = " + event);
+			emitters.send(event);
+		} else if(event instanceof AdapterStatusPushMessageVO) {
+			LOG.debug("[ApplicationEventHandler] >> applicationEventHandler :: adapter status message = " + event);
+			emitters.send(event);
+		}
+    }
+	
+	//controller에서 이 함수를 호출해서 SseEmitter등록
+	public SseEmitter addSseEmitter(SseEmitter emitter, String push_type, String session_id) {
+		Map<String, String> emitterInfo = new LinkedHashMap<String, String>();
+		emitterInfo.put("push_type", push_type);
+		emitterInfo.put("session_id", session_id);
+		return this.emitters.add(emitter, emitterInfo); 
+	}
+	
+	//실제 push이벤트를 발생시키기 위한 곳에서 이 함수를 호출하여 publishEvent발생하면 @EventListener가 감지
+	public void sendMsg(Object msg){
+        publisher.publishEvent(msg);
+    }
+
+ -SseEmitters(실제 등록된 SseEmitter를 관리하고 클라이언트에 msg push)
+	private final Map<SseEmitter, Map<String, String>> emitters = new ConcurrentHashMap<>();
+	
+	//실제 SseEmitter및, SseEmitter정보 맵을 등록해서 관리
+	public SseEmitter add(SseEmitter emitter, Map<String, String> emitterInfo) {
+		this.emitters.put(emitter, emitterInfo);
+	
+		//emitter 이벤트에 따라 설정, ex)종료되면 서버에서로 정보 삭제
+		emitter.onCompletion(() -> {
+			LOG.info("Emitter completed: {}", emitter);
+			this.emitters.remove(emitter);
+			CamelHelper.getInstance().getUserSessionInfoMap().remove(emitter.toString());
+		});
+		emitter.onTimeout(() -> {
+			LOG.info("Emitter timed out: {}", emitter);
+			emitter.complete();
+			this.emitters.remove(emitter);
+			CamelHelper.getInstance().getUserSessionInfoMap().remove(emitter.toString());
+		});
+		emitter.onError((ex) -> {
+			LOG.info("Emitter error: {}", emitter);
+			emitter.completeWithError(ex);
+			this.emitters.remove(emitter);
+			CamelHelper.getInstance().getUserSessionInfoMap().remove(emitter.toString());
+		});
+		CamelHelper.getInstance().addEmitter(emitter.toString() ,emitterInfo.get("session_id"));
+		System.out.println("emitter: " + emitter);
+		System.out.println("emitter.toString: " + emitter.toString());
+		return emitter;
+	}
+		
+		//applicationEventHandler가 직접 호출하는 함수
+		public void send(Object obj) {
+		send(emitter -> {
+			System.out.println("send emitter: " + emitter.toString());
+			//session_id 추가작업중
+			Map<String, String> emitterInfo = emitters.get(emitter);
+			String push_type = emitterInfo.get("push_type");
+			String session_id = emitterInfo.get("session_id");
+			boolean session_valid = true;
+			try {
+				session_valid = CamelHelper.getInstance().getUserSessionInfoMap().get(emitter.toString()).get(session_id);
+			} catch(Exception e) {
+				return;
+			}
+			
+			if(!session_valid) {
+				emitter.send("sessionExpired", MediaType.APPLICATION_JSON);
+			} else {
+				if(SseEmitters.PUSH_TYPE_INTERFACE_LOG.equalsIgnoreCase(push_type)) {
+					if(!(obj instanceof IfLogPushMessageVO)) return;
+					IfLogPushMessageVO msg = (IfLogPushMessageVO) obj;
+					emitter.send(msg, MediaType.APPLICATION_JSON);
+					LOG.info("== Push type :-> [{}]\t SSE MessageVO :-> {}", push_type, obj);
+				} else if(SseEmitters.PUSH_TYPE_SVR_RSRC_STATUS.equalsIgnoreCase(push_type)
+						&& obj instanceof SvrRsrcStatusPushMessageVO) {
+					emitter.send(obj, MediaType.APPLICATION_JSON);
+					LOG.info("== Push type :-> [{}]\t SSE MessageVO :-> {}", push_type, obj);
+				} else if(SseEmitters.PUSH_TYPE_ADAPTER_STATUS.equalsIgnoreCase(push_type)
+						&& obj instanceof AdapterStatusPushMessageVO) {
+					emitter.send(obj, MediaType.APPLICATION_JSON);
+					LOG.info("== Push type :-> [{}]\t SSE MessageVO :-> {}", push_type, obj);
+				}else {
+					// do nothing... 
+					//LOG.info("== Unexpected push type :-> [{}]\t MessageVO :-> {}", push_type, obj);
+				}
+			}
+			
+		});
+	}
+
+	public void send(SseEmitter.SseEventBuilder builder) {
+		send(emitter -> emitter.send(builder));
+	}
+
+	private void send(SseEmitterConsumer<SseEmitter> consumer) {
+		List<SseEmitter> failedEmitters = new ArrayList<>();
+
+		for(Iterator<SseEmitter> iter = emitters.keySet().iterator(); iter.hasNext();) {
+			SseEmitter emitter = iter.next();
+			try {
+				consumer.accept(emitter);
+			} catch (Exception e) {
+				emitter.completeWithError(e);
+				failedEmitters.add(emitter);
+				// LOG.error("Emitter failed: {}", emitter, e);
+			}
+		}
+		
+		// 실패한 emitter 삭제
+		for(Iterator<SseEmitter> iter = failedEmitters.iterator(); iter.hasNext();) {
+			this.emitters.remove(iter.next());
+		}
+	}
+
+	@FunctionalInterface
+	private interface SseEmitterConsumer<T> {
+		void accept(T t) throws IOException;
+	}
+
+	public Map<SseEmitter, Map<String, String>> getSseEmitterMapTest(String push_type) {
+		Map<SseEmitter, Map<String, String>> filteredMap = emitters
+				.entrySet().stream()
+				.filter(map -> map.getValue().get("push_type").equalsIgnoreCase(push_type))
+				.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+		return filteredMap;
+	}
+ 
+
+2. Client Side
+	var eventSource = null;
+	
+	//서버에 연결
+	function connectPushService(){
+		if(window.EventSource == null) {
+			//alert('This browser does not support SSE');
+			eventSource = new EventSourcePolyfill(url + '?topic=' + topic);
+		} else {
+			eventSource = new EventSource(interfaceLogPushURL, {withCredentials:true});
+		}
+		
+		eventSource.onopen = function() {
+			console.log('connection is established');
+		};
+		
+		eventSource.onerror = function(err) {
+			console.log('connection state : ' + eventSource.readyState + ', error : ' + JSON.stringify(err));
+		};
+		
+		eventSource.onmessage = function(event) {
+			//console.log('id=' + event.lastEventId + ', data=' + event.data);
+			//$('#log_message').text($('#log_message').text() + '\n' + event.data);
+			//$('#log_message').append(event.data);
+		
+			if(event.data.endsWith('sessionExpired')) {
+				eventSource.close();
+				console.log('connection is closed');
+			}else{
+				var jsondata = JSON.parse(event.data);
+				updatetable(jsondata);
+			}
+
+		};
+	}
+	
+	//연결해제
+	function disconnectPushService(){
+		if(eventSource != undefined && typeof(eventSource) == "object") {
+			eventSource.close();
+			console.log('stop button connection is closed');
+		} else {
+			
+		}				
+	}
