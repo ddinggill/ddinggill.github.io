@@ -1,0 +1,52 @@
+-handshake 및 서버리소스 구하기
+ 서버들끼리 서로 주기적으로 rmi방식으로 통신해서 master서버가 죽었을시 
+ 서버 리소스 사용량이 가장 적은 서버에게 master 역할부여
+ 
+1. 메인라우터에 서버리소스 정보 반환하는 rmi 라우터와 / handshake rmi 라우터 등록
+String myIpAddress = Inet4Address.getLocalHost().getHostAddress(); //myIpAddress = "127.0.0.1";
+from("rmi://" + myIpAddress + ":" + rmiPort + "/" + SystemCommonConstants.RMI_REGISTRY_NAME_SVR_RESOURCE + "?remoteInterfaces=com.service.monitoring.SystemInfoService")
+.bean(SystemInfoServiceImpl.class);
+from("rmi://" + myIpAddress + ":" + rmiPort + "/" + SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING + "?remoteInterfaces=com.service.monitoring.handshake.HandShakingService")
+.bean(HandShakingServiceImpl.class);
+
+remoteInterfaces에 들어가는 클래스가 rmi콜로해서 반환되는 클래스
+
+2. 서버 리소스 구하기
+ getCpuInfo - OperatingSystemMXBean osMxBean = ManagementFactory.getOperatingSystemMXBean();
+				osMxBean.getAvailableProcessors();
+				osMBean.getSystemCpuLoad() * 100;
+ getMemoryInfo - MemoryMXBean memMxBean = ManagementFactory.getMemoryMXBean();
+					memMxBean.getHeapMemoryUsage().getMax()
+					memMxBean.getHeapMemoryUsage().getUsed()
+					memMxBean.getHeapMemoryUsage().getInit()
+					memMxBean.getNonHeapMemoryUsage().getMax()
+					memMxBean.getNonHeapMemoryUsage().getUsed()
+					memMxBean.getNonHeapMemoryUsage().getInit()
+			   - com.sun.management.OperatingSystemMXBean osBean = (com.sun.management.OperatingSystemMXBean)ManagementFactory.getOperatingSystemMXBean();
+					long totalOsMem = osBean.getTotalPhysicalMemorySize();
+					long freeOsMem = osBean.getFreePhysicalMemorySize();
+					long totalOsSwapMem = osBean.getTotalSwapSpaceSize();
+ getDiskInfo - File[] diskList = File.listRoots(); 
+				for(File rootFile : diskList) {
+				Map<String, Object> resultMap = new HashMap<String, Object>();
+				resultMap.put(SystemInfoService.DISK_ROOT_PATH, 			rootFile.getAbsolutePath());
+				resultMap.put(SystemInfoService.DISK_TOTAL_SPACE, 			rootFile.getTotalSpace());
+				resultMap.put(SystemInfoService.DISK_USABLE_SPACE, 			rootFile.getUsableSpace());
+				resultMap.put(SystemInfoService.DISK_FREE_SPACE, 			rootFile.getFreeSpace());
+				resultList.add(resultMap);
+			}
+ getThreadInfo - ThreadMXBean threadMxBean = ManagementFactory.getThreadMXBean();
+					resultMap.put(SystemInfoService.THREAD_CURRENT_COUNT, 			threadMxBean.getThreadCount());
+					resultMap.put(SystemInfoService.THREAD_CURRENT_CPU_TIME, 		threadMxBean.getCurrentThreadCpuTime());
+					resultMap.put(SystemInfoService.THREAD_CURRENT_USER_TIME, 		threadMxBean.getCurrentThreadUserTime());
+					resultMap.put(SystemInfoService.THREAD_DAEMON_COUNT, 			threadMxBean.getDaemonThreadCount());
+					resultMap.put(SystemInfoService.THREAD_PEAK_COUNT, 				threadMxBean.getPeakThreadCount());
+ getClassLoadingInfo - ClassLoadingMXBean classMxBean = ManagementFactory.getClassLoadingMXBean();
+							resultMap.put(SystemInfoService.CLASS_TOTAL_LOADED, 			classMxBean.getTotalLoadedClassCount());
+							resultMap.put(SystemInfoService.CLASS_CUR_LOADED, 				classMxBean.getLoadedClassCount());
+							resultMap.put(SystemInfoService.CLASS_CUR_UN_LOADED, 			classMxBean.getUnloadedClassCount());
+							
+3. handshake
+Registry registry = LocateRegistry.getRegistry(rmi날릴 서버의 아이피, rmi port(카멜 라우터에 rmi등록했던 포트번호));
+HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
+Map<String, Object> svrRsc = handshake.getServerRscInfo();				// 너의 서버 자원을 알려다오
