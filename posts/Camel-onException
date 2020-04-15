@@ -1,4 +1,4 @@
--camelContext onException
+-camelContext onException(참고 https://torpedocorp.github.io/2018/11/07/ErrorHandling_onException.html)
 
 모든 exception이 아닌, 특정 exception에 대하여 처리하고 싶을 때 정의 Syntax : <onException> 주로 
 error handler(defaultErrorHandler, Dead Letter Channel)와 같이 결합하여 사용
