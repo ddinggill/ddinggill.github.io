@@ -1,0 +1,40 @@
+-Camel Component 개발 가이드
+
+1. Camel Component는 아래 4개의 class 가 기본으로 필요합니다
+ Component - DefaultComponent를 상속받아 Endpoint를 생성한다.
+ Consumer - 라우터의 from uri로 생성될 클래스
+ Endpoint - component에서 URI로 지정한 옵션과 Property를 가지고 각
+			Consumer와 Producer를 생성
+ Producer - 라우터의 to uri로 생성될 클래스이며 exchange로 전달된 데이터를
+			처리하는 process(Exchange exchange) 메서드를 구현
+
+2. Component
+ DefaultComponent를 상속받아 다음의 메서드를 구현해야 합니다.
+ 
+ protected Endpoint createEndpoint(String uri, String remaining, Map<String, Object> parameters)
+
+ 이 createEndpoint는 Endpoint 클래스를 생성하며 각 파라미터는 다음과 같습니다.
+	1. Uri : <to uri=”xconnect-sap:kind?option1=op1&option2=op2…”/> 부분에서
+	   ”xconnect-sap:kind?option1=op1&option2=op2…” 부분 전체가 넘어옵니다.
+	2. Remaining : “xconnect-sap:kind?option1…” 부분에서 kind 부분이 넘어옵니다.
+	3. Parameters : ?option1=op1&option2=op2… 부분이 Map 형식으로 넘어옵니다.
+
+ 이 메서드에서는 setProperties(endpoint, parameters); 를 호출하여 각 파라미터를 셋팅하고 
+ 생성된 endpoint를 반환하여야 합니다.
+
+3. Endpoint
+ Endpoint는 DefaultEndpoint 를 상속받아 component에서 생성된 각 parameter 및 remaining 부분을 변수로 선언하고 
+ 각 변수에 대해 Getter/Setter 메서드를 구현해야 합니다.
+ 또한 클래스선언부에는 다음과 같은 어노테이션을 선언하여 명시적으로 SPEC을 알려주는 것이 좋습니다. (필수사항은 아님)
+ @UriEndpoint(firstVersion = "1.0.0", scheme = "xconnect-dbbatch", title = "XConnect DB Batch Camel Component", 
+ syntax = "xconnect-dbbatch:kind", consumerClass = DbBatchConsumer.class, label = "send,receive")
+ UriEndpoint 어노테이션에는 Camel 지원 버전, 스키마 정보, 제목, URI 생성 문법, consumer 클래스, 라벨 등의 정보가 담깁니다.
+
+4. Producer
+ Producer는 DefaultProducer 를 상속받아 endpoint에서 가지고있는 property 변수를 이용하여 
+ Camel Exchange로 넘겨오는 데이터를 처리하는 process 메서드를 구현하면 됩니다.
+
+5. Consumer
+ Consumer는 DefaultConsumer 를 상속받아 데이터를 리스닝하는 메서드를 구현하면 되며, 
+ protected void doStart()
+ 메서드에서 카멜 라우터가 시작될 때 호출되는 메서드를 구현해야 합니다.
