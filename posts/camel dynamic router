@@ -1,0 +1,174 @@
+-camel dynamic router
+ 런타임시 동적으로 메시지를 라우팅하여 라우터의 종속성을 피할 수 있다.
+ dynamic router method에서 null을 리턴하지 않으면 게속 루핑되기 때문에
+ null을 꼭 리턴해야한다.
+ 
+1. 메인 라우터에서 인터페이스 요청에 따라 다이나믹 라우터로 라우팅
+///////////////////////////////////////////////////////////////////////////////////
+			// 4. Dynamic Router (Sample)
+			/*
+			 * Spring DSL sample
+			 * <bean id="dynamicRouterResolver" class="com.xconnect.eai.server.service.processor.CamelDynamicRouter"/>
+			 * <camel:route>
+			 * 		<camel:from uri="jetty://http://0.0.0.0:38089/REST"/>
+			 * 		<camel:dynamicRouter>
+			 * 			<method ref="dynamicRouterResolver" method="resolve"/>
+			 * 		</camel:dynamicRouter>
+			 * </camel:route>
+			 */
+			from("jetty://http://0.0.0.0:7071/REST")
+				.process(new Processor() {
+					@Override
+					public void process(Exchange exchange) throws Exception {
+						exchange.getIn().setBody(exchange.getIn().getBody(String.class).trim());
+					}
+				})
+				.choice()
+					.when(body().startsWith("<"))
+						.setProperty(SystemCommonConstants.REQUEST_DATA_TYPE).simple("xml")
+						.bean(StandardInterfaceMessageParser.class, "xmlparser")
+					.when(body().startsWith("{"))
+						.setProperty(SystemCommonConstants.REQUEST_DATA_TYPE).simple("json")
+						.bean(StandardInterfaceMessageParser.class, "jsonparser")
+					.otherwise()
+						.setBody().simple("[X-Connector]-잘못된 데이터 형식입니다. XML or JSON만 가능합니다.")
+						.stop()
+				.end()
+				.to("xconnect-log:request?command=start")
+				.dynamicRouter(method(CamelDynamicRouter.class, "resolve"))
+			;
+
+2. 다이나믹 라우터에서 메세지를 보고 알맞은 라우터로 메세지 라우팅
+	@SuppressWarnings({ "deprecation", "static-access" })
+	public String resolve(Exchange exchange, @Properties Map<String, Object> properties) throws Exception {
+
+		// Dynamic Router 중복실행 체크, exchange.setProperty("DYNAMIC_ROUTER_INVOKED", 1)로 세팅하면 반복될때 null 리턴하기 때문에 중복실행X
+		if(properties.get("DYNAMIC_ROUTER_INVOKED") != null) return null;
+		exchange.setProperty("DYNAMIC_ROUTER_INVOKED", 1);
+		//if(true) return "direct:IF_CN_CXP_HQ-EAI_0020_v001";
+
+		try {
+			exchange.setProperty("DYNAMIC_ROUTER_INVOKED", 1);
+			
+			LOG.debug("-------------------------- XConnector Dynamic Router -------------------------");
+			HttpServletRequest servletRequest = exchange.getIn().getHeader("CamelHttpServletRequest", HttpServletRequest.class);
+			LOG.debug("[CamelDynamicRouter] >> resolve ::  header = " + exchange.getIn().getHeaders());
+			LOG.debug("------------------------------------------------------------------------------");
+			
+			InterfaceRequestMessage message = exchange.getIn().getBody(InterfaceRequestMessage.class);
+			String if_id = message.getIfId();
+			String if_ver= message.getIfVer();
+			/////////////////////////////////////////////////////////////
+			// 0. Interface ID가 존재하지 않으므로 Error 처리
+			if(if_id.equals("")) throw new XConnectEaiServerException("전문 Header에 인터페이스 아이디가 없습니다. 확인 바랍니다.", XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL);
+
+			/////////////////////////////////////////////////////////////
+			// 1. Auth 인증 체크 (Basic, Bearer)
+			AuthorizationInfoVO authVo = null;
+			Map<String, Object> clientInfoMap = null;
+			try {
+				authVo = CommonUtils.getAuthInfo(servletRequest);
+				clientInfoMap = ClientAuthChecker.checkAuthorization(authVo);
+				if( !clientInfoMap.get("SYSTEM_ID").toString().equalsIgnoreCase(message.getIfSender()) ) {
+					throw new XConnectEaiServerException("요청하신 Sender System의 ID/PWD 가 일치하지 않습니다.", XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL);
+				}
+			} catch (XConnectEaiServerException e) {
+				throw e;
+			}
+			
+			/////////////////////////////////////////////////////////////
+			// 2. 파트너일때 실행불가 인터페이스 목록 체크
+			if(clientInfoMap.get("CLIENT_KIND").toString().equalsIgnoreCase("PARTNER")) {
+				try {
+					ClientAuthChecker.checkPartnerForbiddenIf(clientInfoMap.get("CLIENT_ID").toString(), if_id, if_ver);
+				} catch (XConnectEaiServerException e) {
+					throw e;
+				}
+			}
+
+			//////////////////////////////////////////////////////////////////
+			// FIXME TEST... 테스트 이후 삭제할것...
+			if(!if_id.equals("")) return "direct:" + if_id + "_" + if_ver;
+			//////////////////////////////////////////////////////////////////
+
+			/////////////////////////////////////////////////////////////
+			// 3. 실행인터페이스 Table Map에서 인터페이스 상태를 체크한다.
+			ConcurrentHashMap<String, Map<String, Object>> runningInterfaceInfoMap = CamelHelper.getInstance().runningInterfaceInfoMap;
+			boolean __can_do_routing = false;
+			Map<String, Object> tb_dev_run_if_table_map = runningInterfaceInfoMap.get(if_id + "_" + if_ver);
+			if(tb_dev_run_if_table_map != null) {
+				String status = CommonUtils.strNvl(tb_dev_run_if_table_map.get("IF_STAT_CD"), "D");
+				if(status.equalsIgnoreCase("D")) __can_do_routing = false;			// Disabled
+				else if(status.equalsIgnoreCase("E")) __can_do_routing = true;		// Enabled
+			}
+			// 실행가능 인터페이스가 아니므로 에러처리
+			if(__can_do_routing) throw new XConnectEaiServerException("해당 인터페이스는 실행가능한 인터페이스가 아닙니다.", XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL);
+
+			/////////////////////////////////////////////////////////////
+			// 4. 최종적으로 'direct:INTERFACEID_IFVER' 으로 라우팅 해준다.
+			return "direct:" + if_id + "_" + if_ver;
+
+		} catch (Exception e) {
+			/////////////////////////////////////////////////////////////
+			// 5. 오류가 발생하면 'direct:DYNAMIC_ROUTING_ERROR_HANDLER' 라우터로 보낸다.
+			LOG.error("[CamelDynamicRouter] >> route :: Error > " + CommonUtils.getPrintStackTrace(e));
+			if(e instanceof XConnectEaiServerException) exchange.setProperty(Exchange.EXCEPTION_CAUGHT, e);
+			else exchange.setProperty(Exchange.EXCEPTION_CAUGHT, new XConnectEaiServerException("해당 인터페이스를 라우팅 할 수 없습니다. " + e.getMessage(), XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL) );
+			
+			return "direct:DYNAMIC_ROUTING_ERROR_HANDLER";
+		}
+	}
+	
+3. 다이나믹 라우터에서 라우팅 해준 라우터로 가서 실행
+// TEST ...
+			from("direct:IF_CN_CXP_HQ-EAI_0020_v001")
+			.to("xconnect-log:request?command=logging")
+				.process(new Processor() {
+					@Override
+					public void process(Exchange exchange) throws Exception {
+						InterfaceRequestMessage message = exchange.getIn().getBody(InterfaceRequestMessage.class);
+						LOG.debug("TEST!! >> process :: " + message.getBody());
+						InterfaceResponseMessage response_message = new InterfaceResponseMessage(message);
+						InterfaceRequestMessage req_msg = exchange.getIn().getBody(InterfaceRequestMessage.class);
+						response_message.setStart_tm(message.getStart_tm());	// Request Message의 start timestamp setting
+						response_message.setDuration(System.currentTimeMillis() - message.getStart_tm());
+						response_message.setHeader(req_msg.getHeader());
+						response_message.setPayload(req_msg.getBody());
+						response_message.setIfTotCnt(req_msg.getIfTotCnt());
+						if(req_msg.getIfSenderGrp().equals("CN")) {
+							response_message.setIfResult("S");
+							response_message.setIfFailMsg("");
+						}else {
+							//response_message.setIfResult("E");
+							//response_message.setIfFailMsg(SystemCommonConstants.EAI_SERVER_ERROR_PREFIX + " - 알수없는 오류가 발생하였습니다. 관리자에게 문의 바랍니다");
+							exchange.getIn().setBody( response_message );
+							throw new XConnectEaiServerException("XConnectEaiServerException error!!", XConnectEaiServerException.NON_SPECIFY_ERROR);
+							//throw new Exception("Exception error");
+						}
+						exchange.getIn().setBody( response_message );
+						//throw new Exception("Exception error");
+						//throw new XConnectEaiServerException("XConnectEaiServerException error!!", XConnectEaiServerException.NON_SPECIFY_ERROR);
+						//CamelHelper.getInstance().getProducerTemplate().asyncSendBody(SystemCommonConstants.EAI_SERVER_BROKER_NAME + ":queue:" + SystemCommonConstants.IF_LOG_QUEUE_NANE, message);
+					}
+				})
+				.to("xconnect-log:response?command=logging")
+				.to("xconnect-log:any?command=flush")
+				.end()
+			;
+	
+4. 에러가 발생한 경우 메인 라우터에서 미리 등록한 에러 핸들러 라우터로 라우팅
+		// 0.0 Dynamic Routing Error Handler
+			from("direct:DYNAMIC_ROUTING_ERROR_HANDLER")
+			.process(new Processor() {
+				@Override
+				public void process(Exchange exchange) throws Exception {
+					XConnectEaiServerException cause = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, XConnectEaiServerException.class);
+					InterfaceResponseMessage response_message = new InterfaceResponseMessage(exchange.getIn().getBody(InterfaceMessage.class));
+					response_message.setIfResult("E");
+					response_message.setIfFailMsg(SystemCommonConstants.EAI_SERVER_ERROR_PREFIX + " - " + cause.getMessage());
+					String response_msg_string = exchange.getProperty(SystemCommonConstants.REQUEST_DATA_TYPE, String.class) != null ?
+							exchange.getProperty(SystemCommonConstants.REQUEST_DATA_TYPE, String.class).equalsIgnoreCase("xml") ?
+									response_message.getXmlResponseMessage() : response_message.getJsonResponseMessage() : response_message.getJsonResponseMessage();
+					exchange.getOut().setBody( response_msg_string );		
+				}
+			});
