@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:jee="http://www.springframework.org/schema/jee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:util="http://www.springframework.org/schema/util" xmlns:ctx="http://www.springframework.org/schema/context"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:camel="http://camel.apache.org/schema/spring"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.1.xsd
+        http://www.springframework.org/schema/jee  http://www.springframework.org/schema/jee/spring-jee-3.1.xsd
+        http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.1.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.1.xsd
+        http://www.springframework.org/schema/tx  http://www.springframework.org/schema/tx/spring-tx-3.1.xsd
+        http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	<!-- ========================================================================================= -->
+	<!--                                   Camel Default Router                                    -->
+	<!-- ========================================================================================= -->
+	<camelContext id="XConnect-EAI-Server-Bootstrap-CamelContext" xmlns="http://camel.apache.org/schema/spring">
+		<propertyPlaceholder id="camelProp" location="file:${server.home}/conf/server-${spring.profiles.active:dev}.properties" />
+		<routeBuilder ref="XConnectEAIServerBootstrapRouter" />
+	</camelContext>
+    
+    <!-- <context:component-scan base-package="com.xconnect.eai" /> -->
+
+	<!-- Main Router -->
+	<bean id="XConnectEAIServerBootstrapRouter" class="com.xconnect.eai.server.service.XConnectServerRouter" />
+
+	<!-- 서버자원 정보 반환 RMI Server Registry 등록 -->
+	<bean id="rmiServer" class="java.rmi.registry.LocateRegistry" factory-method="createRegistry">
+		<constructor-arg index="0" value="${rmi.port}" />
+	</bean>
+	
+	<!-- 공통 Camel Router Processor BEAN -->
+	<bean id="dynamicRouterResolver" class="com.xconnect.eai.server.service.processor.CamelDynamicRouter" />
+	<bean id="COMMON-IfMessageMashaller" class="com.xconnect.eai.server.service.processor.StandardInterfaceMessageParser" />
+	<bean id="COMMON-IfResponseMapping" class="com.xconnect.eai.server.service.processor.ResponseMappingProcessor" />
+	<bean id="COMMON-IfPropertySetter" class="com.xconnect.eai.server.service.processor.GeneralPropertyProcessor" />
+	<bean id="COMMON-ErrorHandler" class="com.xconnect.eai.server.service.processor.system.ExceptionProcessor" />
+	<bean id="COMMON-ScheduleLogger" class="com.xconnect.eai.server.service.processor.system.ScheduleLogger" />
+	<bean id="COMMON-ConditionChecker" class="com.xconnect.eai.server.service.processor.GeneralConditionalChecker" />
+
+	<!-- XConnector EAI Server 기본 Broker 설정 부분 -->
+	<!-- Java Message Service -->
+	<bean id="jmsConnectionFactory" class="org.apache.activemq.pool.PooledConnectionFactory" destroy-method="stop">
+		<property name="connectionFactory">
+			<bean class="org.apache.activemq.ActiveMQConnectionFactory">
+				<property name="brokerURL">
+					<value>${broker.url}</value>
+				</property>
+				<property name="trustAllPackages" value="true" />
+			</bean>
+		</property>
+		<property name="maxConnections" value="2" />
+	</bean>
+	<bean id="jmsConfig" class="org.apache.camel.component.jms.JmsConfiguration">
+		<property name="connectionFactory" ref="jmsConnectionFactory" />
+		<property name="transacted" value="false" />
+		<property name="concurrentConsumers" value="1" />
+	</bean>
+	
+	<bean id="XCONNECTMQ" class="org.apache.activemq.camel.component.ActiveMQComponent">
+		<property name="configuration" ref="jmsConfig" />
+	</bean>
+
+	<!-- Dynamic Library Loading (Hotdeploy) 설정 부분 -->
+	<!-- <bean id="hotDeployManager" class="com.xconnect.eai.server.service.register.HotdeployLibManager" destroy-method="stop">
+	    <constructor-arg value="${hot.deploy.repository.path}"/>
+	</bean> -->
+
+</beans>
