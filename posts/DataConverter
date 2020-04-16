@@ -1,4 +1,9 @@
 -DataConverter
+ 메인 라우터에서 endpoint로 bean method를 바인딩할때
+ 빈으로 등록하는 method에 @Hanlder 어노테이션 달아야한다.
+ //TEST//
+//from("timer://TrackingIdGen?period=5000&delay=1000&repeatCount=3").routeId("TRACKINGIDGEN")
+//.bean(TrackingIdGenerator.class, "getTrackingId");
 /*
  * Copyright Hyundai Auto Ever.
  * All rights reserved.
