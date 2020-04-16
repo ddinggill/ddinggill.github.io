@@ -1,0 +1,138 @@
+-DataConverter
+/*
+ * Copyright Hyundai Auto Ever.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai Auto Ever. ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.lib.converter; 
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.Handler;
+import org.json.JSONObject;
+import org.json.XML;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.lib.converter 
+ *    |_ DataConverter.java
+ * 
+ * </pre>
+ * @date : 2020. 1. 9. 오전 9:55:25
+ * @version : 
+ * @author : A932060
+ */
+
+@Configuration("dataConverter")
+public class DataConverter {
+
+	private static final Logger LOG = LoggerFactory.getLogger(DataConverter.class);
+
+	@Handler
+	public void JsonToXml(Exchange exchange) throws Exception{
+		try {
+			String json_str = (String) exchange.getIn().getBody();
+			JSONObject json_obj = new JSONObject(json_str);
+			String xml = XML.toString(json_obj);
+			
+			exchange.getIn().setBody(xml);
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new XConnectEaiServerException("DataConverter JsonToXml Exception" + XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+	
+	@Handler
+	public void JsonToMap(Exchange exchange) throws Exception{
+		try {
+			String json_str = (String) exchange.getIn().getBody();
+			ObjectMapper mapper = new ObjectMapper();
+			Map<String, Object> map= new HashMap<String, Object>();
+			map = mapper.readValue(json_str, new TypeReference<Map<String, Object>>() {});
+			
+			exchange.getIn().setBody(map);
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new XConnectEaiServerException("DataConverter JsonToMap Exception" + XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+	
+	@Handler
+	public void XmlToJson(Exchange exchange) throws Exception{
+		try {
+			String xml_str = (String) exchange.getIn().getBody();
+			JSONObject xmlJSONObj = XML.toJSONObject(xml_str.toString());
+			String xml_json_str = xmlJSONObj.toString();
+			exchange.getIn().setBody(xml_json_str);
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new XConnectEaiServerException("DataConverter XmlToJson Exception" + XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+	
+	@Handler
+	public void XmlToMap(Exchange exchange) throws Exception{
+		try {
+			String xml_str = (String) exchange.getIn().getBody();
+			JSONObject xmlJSONObj = XML.toJSONObject(xml_str.toString());
+			String xml_json_str = xmlJSONObj.toString();
+			
+			ObjectMapper mapper = new ObjectMapper();
+			Map<String,Object> map = new HashMap<String, Object>();
+			map = mapper.readValue(xml_json_str, new TypeReference<Map<String, Object>>() {});
+			
+			exchange.getIn().setBody(map);
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new XConnectEaiServerException("DataConverter XmlToMap Exception" + XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+	
+	@SuppressWarnings("unchecked")
+	@Handler
+	public void MapToJson(Exchange exchange) throws Exception{
+		try {
+			Map<String, Object> map = (Map<String, Object>) exchange.getIn().getBody();
+			
+			ObjectMapper mapper = new ObjectMapper();
+			String json_str = mapper.writeValueAsString(map);
+			
+			exchange.getIn().setBody(json_str);
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new XConnectEaiServerException("DataConverter MapToJson Exception" + XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+	
+	@SuppressWarnings("unchecked")
+	@Handler
+	public void MapToXml(Exchange exchange) throws Exception{
+		try {
+			Map<String, Object> map = (Map<String, Object>) exchange.getIn().getBody();
+			
+			ObjectMapper mapper = new ObjectMapper();
+			String json_str = mapper.writeValueAsString(map);
+			
+			JSONObject json_obj = new JSONObject(json_str);
+			String xml = XML.toString(json_obj);
+			
+			exchange.getIn().setBody(xml);
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new XConnectEaiServerException("DataConverter MapToXml Exception" + XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+}
