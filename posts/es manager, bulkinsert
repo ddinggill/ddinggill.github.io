@@ -1,0 +1,247 @@
+-es manager
+bulkinsert : 큐애서 빼온 데이터는 메모리에 실시간으로 게속 쌓아두고, 메모리에 있는 데이터를 
+timer 컴포넌트를 이용하는 라우터를 하나 등록해서 주기적으로 es로 bulkinsert 하고, 메모리에서 삭제
+
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.common.elasticsearch; 
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import org.elasticsearch.action.bulk.BulkItemResponse;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.action.delete.DeleteRequest;
+import org.elasticsearch.action.delete.DeleteResponse;
+import org.elasticsearch.action.get.GetRequest;
+import org.elasticsearch.action.get.GetResponse;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.action.update.UpdateResponse;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.search.aggregations.Aggregations;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.nlpcn.es4sql.query.ESActionFactory;
+import org.nlpcn.es4sql.query.SqlElasticRequestBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.common.vo.BigDataDocument;
+
+/**
+ * ** ElasticSearch Document CRUD 구현 서비스
+ */
+@Service("elasticSearchManager")
+public class ElasticSearchManager {
+
+	private static final Logger LOG = LoggerFactory.getLogger(ElasticSearchManager.class);
+
+	private RestHighLevelClient client;
+	private TransportClient tsclient;
+	
+	private ObjectMapper objectMapper;
+	
+	@Autowired
+    public ElasticSearchManager(RestHighLevelClient client, TransportClient tsclient, ObjectMapper objectMapper) {
+		LOG.debug("[ElasticSearchManager] >> ElasticSearchManager :: client=" + client);
+        this.client = client;
+        this.objectMapper = objectMapper;
+        this.tsclient = tsclient;
+    }
+	
+	public List<EsCommonDoc> select(String index, String where_claus) throws Exception {
+		try {
+			String sql_query = String.format("SELECT * FROM %s WHERE %s", index, where_claus);
+
+			SqlElasticRequestBuilder select = ESActionFactory.create(tsclient, sql_query).explain();
+			
+			SearchHits searchResponse = ((SearchResponse)select.get()).getHits();
+			long total_found_num = searchResponse.getTotalHits();
+			
+			List<EsCommonDoc> resultList = new ArrayList<>();
+			for(Iterator<SearchHit> iter = searchResponse.iterator(); iter.hasNext();) {
+				SearchHit hit = iter.next();
+				Map<String, Object> resultMap = hit.getSourceAsMap();
+				EsCommonDoc doc = new EsCommonDoc(index, hit.getId(), new Gson().toJson(resultMap));
+				resultList.add(doc);
+			}
+			
+			return resultList;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> select :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	public List<EsCommonDoc> selectSql(String index, String sql_query) throws Exception {
+		try {
+			SqlElasticRequestBuilder select = ESActionFactory.create(tsclient, sql_query).explain();
+			
+			SearchHits searchResponse = ((SearchResponse)select.get()).getHits();
+			long total_found_num = searchResponse.getTotalHits();
+			
+			List<EsCommonDoc> resultList = new ArrayList<>();
+			for(Iterator<SearchHit> iter = searchResponse.iterator(); iter.hasNext();) {
+				SearchHit hit = iter.next();
+				Map<String, Object> resultMap = hit.getSourceAsMap();
+				EsCommonDoc doc = new EsCommonDoc(index, hit.getId(), new Gson().toJson(resultMap));
+				resultList.add(doc);
+			}
+			
+			
+			return resultList;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> select :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	public List<Map<String, Object>> selectAggregation(String index, String sql_query, String aggrKey) throws Exception {
+		List<Map<String, Object>> result = null;
+		try {
+			SqlElasticRequestBuilder select = ESActionFactory.create(tsclient, sql_query).explain();
+			
+			SearchResponse searchResponse = (SearchResponse)select.get();
+			Map<String, Aggregation> aggregationMap = searchResponse.getAggregations().asMap();
+			
+			String jsonStr = aggregationMap.get(aggrKey).toString();
+			
+			Map<String, Object> parsedMap = new Gson().fromJson(jsonStr, Map.class);
+			
+			Object buckets = ((Map)parsedMap.get(aggrKey)).get("buckets");
+			if(buckets instanceof List) {
+				result = (List) buckets;
+			}	
+			
+			return result;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> selectAggregation :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	
+	public EsCommonDoc findById(String index, String id) throws Exception {
+		try {
+			GetRequest getRequest = new GetRequest(index, "_doc", id);
+			
+			GetResponse getResponse = client.get(getRequest, RequestOptions.DEFAULT);
+			
+			Map<String, Object> resultMap = getResponse.getSource();
+			
+			return new EsCommonDoc(index, id, new Gson().toJson(resultMap));
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> findById :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+    }
+	
+	@SuppressWarnings("unchecked")
+	public String insert(EsCommonDoc doc) throws Exception {
+		try {
+			Map<String, Object> documentMapper = objectMapper.convertValue(doc.getDoc(), Map.class);
+			
+			IndexRequest indexRequest = new IndexRequest(doc.getIndex()).source(documentMapper);
+			IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
+			
+			return indexResponse.getResult().name();
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> createProfile :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+    }
+	
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public List<Map> bulkinsert(List<BigDataDocument> docs) throws Exception {
+		try {
+			BulkRequest bulkRequest = new BulkRequest();
+			LOG.debug("=============================================================");
+			LOG.debug("[ElasticSearchManager] >> bulkinsert :: " + docs.size());
+			LOG.debug("=============================================================");
+			for(BigDataDocument doc : docs) {
+				//Map<String, Object> documentMapper = objectMapper.convertValue(((EsCommonDoc)doc).getDoc(), Map.class);
+				Map<String, Object> docMap = (Map<String, Object>) ((EsCommonDoc)doc).getDoc();
+				IndexRequest indexRequest = new IndexRequest(((EsCommonDoc)doc).getIndex(), "_doc").source(docMap);
+				bulkRequest.add(indexRequest);
+			}
+			bulkRequest.timeout(TimeValue.timeValueMinutes(2));
+			BulkResponse blkResponse = client.bulk(bulkRequest, RequestOptions.DEFAULT);
+
+			// 저장실패 메시지를 Map에 담아 List로 보관
+			int fail_count = 0;
+			List<Map> fail_message_list = new ArrayList<Map>();
+			for(BulkItemResponse result : blkResponse.getItems()) {
+				if(result.isFailed()) {
+					fail_count ++;
+					Map<String, Object> resultMap = new HashMap<>();
+					resultMap.put("id", result.getId());
+					resultMap.put("fail_object", result.getFailure());
+					resultMap.put("fail_message", result.getFailureMessage());
+					fail_message_list.add(resultMap);
+				}
+			}
+			
+			return fail_message_list;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> createProfile :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	@SuppressWarnings("unchecked")
+	public String update(EsCommonDoc doc) throws Exception {
+		try {
+			EsCommonDoc resultDocument = findById(doc.getIndex(), doc.getId());
+			
+			UpdateRequest updateRequest = new UpdateRequest( doc.getIndex(), "_doc", resultDocument.getId() );
+			
+			Map<String, Object> documentMapper = objectMapper.convertValue(doc.getDoc(), Map.class);
+			
+			updateRequest.doc(documentMapper);
+			
+			UpdateResponse updateResponse = client.update(updateRequest, RequestOptions.DEFAULT);
+			
+			return updateResponse.getResult().name();
+		} catch (Exception e) {
+			LOG.error( "[ElasticSearchManager] >> update :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+    }
+	
+	public String delete(String index, String id) throws Exception {
+		try {
+			DeleteRequest deleteRequest = new DeleteRequest(index, "_doc", id);
+			DeleteResponse response = client.delete(deleteRequest, RequestOptions.DEFAULT);
+			
+			return response.getResult().name();
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> delete :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+
+    }
+}
