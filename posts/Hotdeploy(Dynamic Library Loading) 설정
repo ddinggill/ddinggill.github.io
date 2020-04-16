@@ -1,0 +1,33 @@
+Hotdeploy(Dynamic Library Loading) 설정 
+
+참고사이트 및 참고용어
+-https://stove99.tistory.com/64(URLClassLoader관련)
+-java reflection 코드
+-https://jeong-pro.tistory.com/166(WatchService 관련)
+
+-서버가 구동된 상태에서 Camel 컴포넌트를 추가해야 할 경우에 jar파일을 다운받아서
+ Repository에 저장하게 되면, 이 폴더를 감시하는 watchservice가 이벤트를 발생한다. 그러면
+ HotdeployLibManager가 동적으로 이를 서버에 반영한다.
+-그리고 컴포넌트 정보와 파라미터테이블에 이를 우리가 등록해주면 사용자입장에서 개발화면에서
+ 값을 보고 사용할 수 있게 된다.
+ 
+ClassLoader의 계층구조
+-VM/EXT/System/Custom(VM과 EXT는 우리가 건들 수 있는 영역이 아니다. 그래서 System클래스로더에 작업요청을 위임한다)
+위임(delegation 패턴)
+-어떤 메소드의 처리를 다른 인스턴스의 메소드에 맡긴다는 의미
+ 즉, 클라이언트 코드에서 구성(composite)하고 있는 참조 객체를 통해 메서드를 호출하는 것(delegation)을 말함
+
+1. HotdeployLibManager를 빈으로 생성하는데 생성자 파라미터로 watch_folder를 줘서 처음에 기존 폴더에 있는 jar 파일들을 로딩
+2. HotdeployLibManager에 URLClassLoader형태의 값을 ClassLoader.getSystemClassLoader();로 얻어온다
+3. Method형태로 URLClassLoader의 addURL메소드를 얻어와서 method.setAccessible(true)로 이 함수에 사용접근?(protected로 선언된 메소드를 public으로 바꿔주는 일)을 허용한다.
+4. watch_folder에의 파일리스트를 가져와서 ".jar"를 포함한 파일들을 로딩
+5. 그러고 start()호출하는데 이함수는 쓰레드로 무한루프 돌면서 hotDeployPath를 모니터링하여 jar 파일이 생성, 수정, 삭제 되었을때 이벤트를 받아 Library 로딩을 수행한다.
+
+이렇게 동적으로 하는 결정적인 이유
+- 기존 pom.xml로 등록된 jar 파일들 같은 경우는 서버가 로딩될때 class파일가지고 이미 인스턴스까지 생성해서 메모리에 올려져 있는다.
+  하지만 URLClassLoader로 로딩되는 jar파일들은 인스턴스가 생성된게 아니라 나중에 사용자가 개발모드에서 빈으로 등록할때 인스턴스를 생성하기 위한 메타정보만 로딩되는 것이기 때문에 메모리를 잡아먹지 않고 있고 속도 빠르다.
+  즉, 동적으로 jar를 로딩하고, 최초에 서버 가동시 메모리를 적게 잡아먹는게 핵심
+  
+- watch_folder는 서버홈에 repository(C:\Users\A932060\eclipse-workspace\XConnect_Server\dist\repository)
+
+
