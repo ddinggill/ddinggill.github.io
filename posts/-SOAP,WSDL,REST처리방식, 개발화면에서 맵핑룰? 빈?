@@ -1,0 +1,51 @@
+-SOAP,WSDL,REST처리방식, 개발화면에서 맵핑룰? 빈?
+-SOAP은 XML방식인데 SOAP특유의 XML방식으로 바꿔야 한다.
+-WSDL은 sender,receiver 양쪽다에서 서로 어떤식으로 데이터를 in,out맵핑을 할것인지에 대한 정보를 가지고 있는것, 미리 이것을 배포해서
+ 이거에 알맞게 xml로 데이터를 만들어서 통신해야한다.
+
+1.서버 init할때 DB에서 아답터 정보를 읽어와서 메인라우터에 등록
+ <routes xmlns="http://camel.apache.org/schema/spring">
+	<route id="SOAP_7072">
+		<from uri="jetty:http://0.0.0.0:7072/services/receive" />
+		<bean ref="COMMON-IfMessageMashaller" method="soapMessageParser(*, true)" />
+		<dynamicRouter>
+			<method ref="dynamicRouterResolver" method="resolve" />
+		</dynamicRouter>
+	</route>
+</routes>
+
+<routes xmlns="http://camel.apache.org/schema/spring">
+	<route id="REST_7071">
+		<from uri="jetty:http://0.0.0.0:7071/services/receive" />
+		<bean ref="COMMON-IfMessageMashaller" method="bodyMessageParser"/>
+		<dynamicRouter>
+			<method ref="dynamicRouterResolver" method="resolve"/>
+		</dynamicRouter>
+	</route>
+</routes>
+
+2. 메인 context에 빈으로 등록된 메세지를 파싱하는 클래스 
+   <bean id="COMMON-IfMessageMashaller" class="com.xconnect.eai.server.service.processor.StandardInterfaceMessageParser" />
+   REST방식은 bodyMessageParser에 의해서 시작구문이 "<" or "{" 따라서
+   json혹은 xml 방식으로 요청을 파싱해서 requestMsg형태로 만들어서 exchange.getIn.setBody에 세팅
+
+3. SOAP방식은 soapMessageParser에 의해서 요청을 파싱해서 requestMsg형태로 만들어서 exchange.getIn.setBody에 세팅
+   그리고 다이나믹 라우터로 태워서 알맞은 인터페이스 라우터로 데이터 보낸다.
+   
+4. 개발화면에서 request 데이터로 맵핑을 하게되면 맵핑룰(리스트 형태)이 만들어지고 이를 bean으로 올린다.
+   <util:list id="IF_CN_CXP_DAOS_0001_v001-mappingRuleList-1">
+	<value>header.ifId=header.ifId</value>
+	<value>header.ifVer=header.ifVer</value>
+	<value>header.ifSenderGrp=header.ifSenderGrp</value>
+	<value>data.PFCSLPOR.POR_DIH_FLG=payload.T_DATA.POR_DIH_FLG</value>
+	<value>data.PFCSLPOR.POR_DIH_ERR=payload.T_DATA.POR_DIH_ERR</value>
+	<value>data.PFCSLPOR.POR_INS_DT=payload.T_DATA.POR_INS_DT</value>
+	<value>data.PFCSLPOR.POR_INS_TM=payload.T_DATA.POR_INS_TM</value>
+	<value>mapping.PFCSLPOR=payload.T_DATA</value>
+   </util:list>
+   
+  그리고 헤더에 이 맵핑룰을 세팅하고 컴포넌트에서 맵핑룰 bean에 있는 정보를 가지고 데이터를 만들어서 이용해서 작업수행(맵핑룰 뿐만 아니라, queryString, spec_yml까지)
+  LinkedList<String> mappingRuleList = new LinkedList<>();
+  mappingRuleList.addAll((List<String>) exchange.getIn().getHeader(SystemCommonConstants.HEADER_KEY_MAPPING_RULE));
+  SOAP같은 경우는 SOAPMessage라는 특정 형태로 만들어서 작업요청
+  작업요청하고 응답받은 결과갑으로 response 메세지만듬
