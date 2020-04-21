@@ -1,0 +1,407 @@
+-HazelCast(IMDG, 참고 https://d2.naver.com/helloworld/106824)
+ In Memory Data Grid
+ 더 빠른 결과를 제공하기 위해 여러 시스템의 메모리에 데이터를 분산시켜 저장
+ 캐시 시스템은 데이터가 없을때 데이터베이스에서 읽어오지만, IMDG는 항상 메인메모리에서 읽어와서 빠르다
+1. 요약 
+ 분산 저장(scale out)
+ 메모리를 사용한다
+ 보통 객체를 저장한다(serialize)
+ Lock, Transaction, Sharding을 지원한다
+
+2. hazelcast
+-java api만 사용하여 의존성이 없다
+-P2P 통신
+ 많은 NoSQL과 달리 peer-to-peer 통신을 사용한다.
+ Master/Slave가 아니라 SPoF가 없다.
+ 모든 member가 동일한 양의 데이터를 쥐고 동일한 양의 연산을 수행한다.
+ Hazelcast를 기존 어플리케이션에 내재시키거(embed)나 혹은 Server/Client 모드로 Hazelcast member의 client로써 어플리케이션을 실행시킬 수 있다.
+-Scalable
+ member를 간단히 추가할수 있으며, 자동으로 cluster를 찾고 선형으로 메모리 및 처리량을 증가시킨다.
+ 각 member들은 TCP로 서로 연결되어 있으며 모든 통신인 TCP로 이루어진다.
+-Fast : 모든 것을 memory에 저장하며, 빠른 읽기/저장이 가능하다
+-중복지원
+ 여러 member에 각 data entry의 백업을 보존한다
+ 한 member에서 실패가 발생시, 백업에서 복구가 되며, 클러스터는 다운되지 않고 동작하게 된다.
+-standalone cache처럼 어플리케이션에 추가하여 사용하는 방식인 Embedded
+ HazelCast node를 구축하고, application은 client로써 접근하는 Server/Client방식
+ 
+3. Xconnector
+-wordbook, register, keystore, file 군데 사용
+-HazelCastManager(Component) : HazelCastCluster구성, InstanceID라는 attribute를 serverID를 이용하여 각각을 식별
+-HazelCastExcutorFor***(Component),***ClusterHanlder,***Vo로 기능 구현
+-요청이 오면 VO를 만들어서 HazelCastExcutorFor***.deployFileToClusterdAllMembers(VO)호출
+-HazelCastExcutorFor***.deployFileToClusterdAllMembers(VO)에서 hazelcastmanager의 HazelcastInstance 받아서 getExecutorService로 
+ HazelCast Cluster위한 작업을 ***ClusterHanlder로 생성해서 클러스터의 모든 멤버에게 실행해서 Future.get으로 응답을 기다리고 결과를 각각의 map으로 담아 list<map>형태로 전체 결과를 반환
+
+-HazelCastManager
+@Component("hazelCastManager")
+public class HazelCastManager {
+
+	private static final Logger LOG = LoggerFactory.getLogger(HazelCastManager.class);
+
+	@Value("${hazelcast.name: XCONNECT_HZ}")
+	private String cluster_name;
+	
+//	@Value("${hazelcast.instance: XCONNECT_HZ_INSTANCE}")
+//	private String cluster_instance;
+	
+	@Value("${SERVER_ID: SVR0000001}")
+	private String cluster_instance;
+
+	@Value("${hazelcast.port: 5701}")
+	private int cluster_port;
+
+	private HazelcastInstance hazelcastInstance;
+	
+	// Get HazelCast instance
+	public HazelcastInstance getInstance() {
+		return hazelcastInstance;
+	}
+
+	@PostConstruct
+	public void init() {
+		try {
+			Config config = new Config();
+			config.setInstanceName(cluster_name);
+			config.setProperty("hazelcast.logging.type", "slf4j");
+			config.getGroupConfig().setName(cluster_name);
+			config.getNetworkConfig().setPort(cluster_port).setPortCount(20);
+			config.getNetworkConfig().setPortAutoIncrement(true);
+			config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(true);
+			config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
+
+			MemberAttributeConfig memberConfig = new MemberAttributeConfig();
+			memberConfig.setStringAttribute("InstanceID", cluster_instance);
+			config.setMemberAttributeConfig(memberConfig);
+
+			hazelcastInstance = Hazelcast.newHazelcastInstance(config);
+			
+			Set<Member> members = hazelcastInstance.getCluster().getMembers();
+			for (Member member : members) {
+				String id = member.getStringAttribute("InstanceID");
+				if (!member.localMember() && id != null && id.equals(cluster_instance)) {
+					LOG.info("### Clustering Member ID : " + cluster_instance + " is already exist.");
+				}
+			}
+			
+		} catch (Exception e) {
+			LOG.error("[HazelCastManager] >> init :: Error > " + CommonUtils.getPrintStackTrace(e));
+		}
+	}
+
+}
+
+-HazelCastExcutorForFile
+@Component
+public class HazelCastExcutorForFile {
+
+	private static final Logger LOG = LoggerFactory.getLogger(HazelCastExcutorForFile.class);
+
+	@Autowired
+	private HazelCastManager hazelCastManager; 
+	
+	public List<Map<String, Object>> deployFileToClusterdAllMembers(FileHandlerVO filevo) {
+		
+		HazelcastInstance instance = hazelCastManager.getInstance();
+		IExecutorService executor = instance.getExecutorService("HzFileCluserService");
+		
+		Map<Member, Future<FileHandlerVO>> resultMap = executor.submitToAllMembers(new FileClusterHandler(filevo));
+		List<Map<String, Object>> returnData = Lists.newLinkedList();
+		resultMap.keySet().stream().forEach((member) -> {
+			Future<FileHandlerVO> future = resultMap.get(member);
+			
+			String instance_id = member.getStringAttribute("InstanceID") + "_" + member.getAddress();
+			String message = null;
+			String status = null;
+			
+			FileHandlerVO resVo = null;
+			try {  
+				resVo = future.get(30, TimeUnit.SECONDS);
+				message =  instance_id + ", Result : " + future.isDone() + ", " + resVo.getResult();
+				status = "success";
+			} catch (Exception e) {
+				message = instance_id + ", Result : error, " + e.getMessage();
+				status = "fail";
+				LOG.warn("{} >> [HazelCastExcutorForFile] >> deployFileToClusterdAllMembers :: Error > {}", instance_id, CommonUtils.getPrintStackTrace(e));
+			}
+			if(ObjectUtils.isEmpty(resVo)) {
+				resVo = new FileHandlerVO();
+			}
+			
+			Map<String, Object> returnMap = new LinkedHashMap<String, Object>();
+			returnMap.put("command", filevo.getCommand().getCommand().toUpperCase());
+			returnMap.put("attachtype", filevo.getAttachtype().getAttachType().toUpperCase());
+			returnMap.put("server_id", instance_id);
+			returnMap.put("status", status);
+			returnMap.put("message", message);			
+			if(!resVo.getResultMap().isEmpty()) 
+				returnMap.putAll(resVo.getResultMap());
+			returnData.add(returnMap);
+		});
+		return returnData;
+	}	
+}
+
+-FileClusterHandler
+public class FileClusterHandler implements Callable<FileHandlerVO>, Serializable {
+
+	private static final long serialVersionUID = 6984935272516528741L;
+	private static final Logger LOG = LoggerFactory.getLogger(FileClusterHandler.class);
+
+	private FileHandlerVO regVo;
+	
+	protected FileClusterHandler() {
+		// prevent default constructor
+	}
+	public FileClusterHandler(FileHandlerVO vo) {
+		this.regVo = vo;
+	}
+	
+	@Override
+	public FileHandlerVO call() throws Exception {
+
+		try {
+			FileHandlerVO vo = null;
+			switch (regVo.getCommand()) {
+			case WRITE:
+				vo = write();
+				break;
+			case DELETE:
+				vo = delete();
+				break;
+			case MODIFY:
+				vo = modify();
+				break;
+			case LIST:
+				vo = list();
+				break;
+				
+			default:
+				break;
+			}
+			return vo;
+		} catch (Exception e) {
+			LOG.error("[FileClusterHandler] >> call :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	private FileHandlerVO write() throws Exception {
+		
+		try {
+			File rstfile = null;
+			switch (regVo.getAttachtype()) {
+			case FILE:
+				rstfile = CommonUtils.writeByteArrayToFile(this.regVo.getDestFile(), this.regVo.getByteData());
+				break;
+			case TEXT:
+				rstfile = CommonUtils.writeStringToFile(this.regVo.getDestFile(), this.regVo.getStringData());
+				break;
+				
+			default:
+				break;
+			}
+			
+			FileHandlerVO resultVo = new FileHandlerVO();
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setAttachtype(regVo.getAttachtype());
+			resultVo.setDestFile(this.regVo.getDestFile());
+			resultVo.setResult(String.format("파일 [%s]을 생성하였습니다.", rstfile.getPath()));
+			resultVo.getResultMap().put("file", rstfile.getPath());
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[FileClusterHandler] >> write :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+	private FileHandlerVO delete() throws Exception {
+		try {
+			File rstfile = CommonUtils.deleteFile(this.regVo.getDestFile());
+			FileHandlerVO resultVo = new FileHandlerVO();
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setAttachtype(regVo.getAttachtype());
+			resultVo.setDestFile(this.regVo.getDestFile());
+			resultVo.setResult(String.format("파일 [%s]을 삭제하였습니다.", rstfile.getPath()));
+			resultVo.getResultMap().put("file", rstfile.getPath());
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[FileClusterHandler] >> delete :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+	private FileHandlerVO modify() throws Exception {
+		try {
+			File rstfile = null;
+			switch (regVo.getAttachtype()) {
+			case FILE:
+				rstfile = CommonUtils.writeByteArrayToFile(this.regVo.getDestFile(), this.regVo.getByteData());
+				break;
+			case TEXT:
+				rstfile = CommonUtils.writeStringToFile(this.regVo.getDestFile(), this.regVo.getStringData());
+				break;
+				
+			default:
+				break;
+			}
+			
+			FileHandlerVO resultVo = new FileHandlerVO();
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setAttachtype(regVo.getAttachtype());
+			resultVo.setDestFile(this.regVo.getDestFile());
+			resultVo.setResult(String.format("파일 [%s]을 수정하였습니다.", rstfile.getPath()));
+			resultVo.getResultMap().put("file", rstfile.getPath());
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[FileClusterHandler] >> modify :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	private FileHandlerVO list() throws Exception {
+		try {
+			FileHandlerVO resultVo = new FileHandlerVO();
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setDirectory(regVo.getDirectory());
+			
+			File dir = this.regVo.getDirectory();
+			if(!dir.exists()) {
+				throw new XConnectEaiServerException(
+						String.format("The directory to read does not exist.[%s]",dir.getPath()));
+			}
+			if(!dir.isDirectory()) {
+				throw new XConnectEaiServerException(
+						String.format("Invalid Parameter [directory]. not a directory.[%s]",dir.getPath()));
+			}
+			File[] fileArray = dir.listFiles();
+			List<Map<String, String>> list = Lists.newArrayList();
+			for(File file : fileArray) {
+				
+				//List<String> linelist = CommonUtils.readFile(file.getParent(), file.getName());
+				//String contents = String.join("\r\n", linelist);
+				//String contents = com.xconnect.eai.web.common.util.CommonUtils.getIndentedXml(String.join("\r\n", linelist));
+				//LOG.debug("== File Contents : {}", contents);
+				Map<String, String> map = new HashMap<String, String>();
+				map.put("filepath", file.getPath());
+				//map.put("contents", contents);
+				list.add(map);
+			}
+			resultVo.setResult(String.format("디렉토리 [%s]의 파일목록을 조회하였습니다.", dir.getPath()));
+			resultVo.getResultMap().put("files", list);
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[FileClusterHandler] >> read :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+}
+
+-FileHandlerVO
+public class FileHandlerVO implements Serializable {
+
+	private static final long serialVersionUID = -3374952625773798046L;
+
+	private byte[] byteData;
+	private String stringData;
+	private File destFile;
+	private File directory;
+	private String result;
+	private Map<String, Object> resultMap = new LinkedHashMap<String, Object>();
+	private COMMAND command;
+	private ATTACHTYPE attachtype;
+	
+	public byte[] getByteData() {
+		return byteData;
+	}
+
+	public void setByteData(byte[] byteData) {
+		this.byteData = byteData;
+	}
+
+	public String getStringData() {
+		return stringData;
+	}
+
+	public void setStringData(String stringData) {
+		this.stringData = stringData;
+	}
+
+	public File getDestFile() {
+		return destFile;
+	}
+
+	public void setDestFile(File destFile) {
+		this.destFile = destFile;
+	}
+
+	public File getDirectory() {
+		return directory;
+	}
+
+	public void setDirectory(File directory) {
+		this.directory = directory;
+	}
+
+	public String getResult() {
+		return result;
+	}
+
+	public void setResult(String result) {
+		this.result = result;
+	}
+
+	public Map<String, Object> getResultMap() {
+		return resultMap;
+	}
+
+	public void setResultMap(Map<String, Object> resultMap) {
+		this.resultMap = resultMap;
+	}
+
+	public COMMAND getCommand() {
+		return command;
+	}
+
+	public void setCommand(COMMAND command) {
+		this.command = command;
+	}
+
+	public ATTACHTYPE getAttachtype() {
+		return attachtype;
+	}
+
+	public void setAttachtype(ATTACHTYPE attachtype) {
+		this.attachtype = attachtype;
+	}
+
+	public enum COMMAND {
+		WRITE("WRITE")
+		, DELETE("DELETE")
+		, MODIFY("MODIFY")
+		, LIST("LIST")
+		;
+		private String command;
+		COMMAND(String command) {
+			this.command = command;
+		}
+		public String getCommand() {
+			return this.command;
+		}
+	}
+
+	public enum ATTACHTYPE {
+		TEXT("TEXT")
+		, FILE("FILE")
+		;
+		private String attachtype;
+		ATTACHTYPE(String attachtype) {
+			this.attachtype = attachtype;
+		}
+		public String getAttachType() {
+			return this.attachtype;
+		}
+	}
+	
+}
