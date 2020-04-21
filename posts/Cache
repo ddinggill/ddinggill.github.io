@@ -1,0 +1,60 @@
+-Cache
+ 동일한 요청이 들어오면 복잡한 작업을 수행해서 결과를 만드는 대신 이미 보관된 결과를 바로 돌려주는 방식
+ 일반적으로 Access가 잦으나 자주 Update되지 않는 곳에 사용(공통으로 사용하는 코드정보나 기준정보)
+ 반복적으로 동일한 결과를 돌려주는 작업, 각 작업의 시간이 오래걸리거나 서버에 부담을 주는 경우
+ 
+1. Dependency 추가
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-cache</artifactId>
+</dependency>
+ <dependency>
+   <groupId>net.sf.ehcache</groupId>
+   <artifactId>ehcache</artifactId>
+   <version>2.10.3</version>
+ </dependency>
+spring-boot-starter-cache 를 추가하면 캐시 관련 의존성(CacheManager 등)을 직접 추가하지 않아도 된다.
+spring-starter-cache에서는 기본적으로 ConcurrentHashMap 을 사용하는데 이를 Ehcache 를 사용하도록 변경하기 위해서 아래의 ehcache 의존성을 추가했다.
+기본적으로 ehcache 의존성이 적용되기 전 CacheManager는ConcurrentMapCacheManager 로 설정되고 ehcache 의존성을 적용하고 나면 EhCacheCacheManager 로 변경, 자동으로 적용된다.
+
+-spring-boot-starter-cache적용안할 경우
+<!-- Spring Ehcache 설정 -->
+<bean id="cacheManager" class="org.springframework.cache.ehcache.EhCacheCacheManager">
+	<property name="cacheManager" ref="ehcache"/>
+</bean>
+<bean id="ehcache" class="org.springframework.cache.ehcache.EhCacheManagerFactoryBean">
+	<property name="configLocation" value="classpath:/META-INF/cache/ehcache.xml" />
+	<property name="shared" value="true"/>
+</bean>
+2. ehcache.xml파일 생성
+<?xml version="1.0" encoding="UTF-8"?>
+<ehcache xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="http://ehcache.org/ehcache.xsd"
+	maxBytesLocalHeap="32M" maxBytesLocalDisk="1000M"
+	updateCheck="false">
+	
+	<cache  name="사용할 캐쉬name"
+            eternal="false"
+            timeToIdleSeconds="3600"
+            timeToLiveSeconds="3600"
+            diskPersistent="false"
+            memoryStoreEvictionPolicy="LRU">
+		<!-- <persistence strategy="localTempSwap" /> -->
+	</cache>
+
+</ehcache>
+
+3. Application.java에 @EnableCaching 추가// 어노테이션을 이용한 캐시기능을 사용하겠다는 선언
+
+4. 적용하려는 Method @Cacheable
+@Cacheable(cacheNames = "useCacheNames", key="#pageNo")	
+public List<ObjectA> getEventsByPageNo(int pageNo) {
+    .......
+}
+메서드를 기준으로 수행되며, 2가지의 캐쉬기능이 동작한다.  
+1. 해당 메서드의 Argument, 혹은 그 중 일부를 key로 취하여 캐쉬에 해당 Key가 존재할 경우 메서드는 수행되지 않고 캐쉬 값을 바로 return 값으로 반환 한다.   
+2. 또한 캐쉬에 해당 값이 존재 하지 않아 메서드가 수행될 경우 Key와 수행결과 (return 값)을 캐쉬에 저장한다.
+함수를 호출할때 파라미터를 key값으로 뼐도로 캐쉬
+
+5. @CacheEvict(value = "findMemberCache", key="#name") 은 해당 캐시 내용을 지우겠다는 의미이다.
+   @CachePut(key="#name") 캐싱 데이터를 업데이트
