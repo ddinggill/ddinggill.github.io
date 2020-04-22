@@ -1,0 +1,32 @@
+-Properties Class
+ .properties 파일 읽어서 속성값 읽어오고 수정해서 파일에 쓸수도 있다.
+ properties에 store 하지않으면 메모리상에서만 값이 바뀌고 파일은 수정되지 않음
+ @Test
+	public void property() throws ParseException {
+		try {
+			String success_file_path = "C:\\Users\\A932060\\eclipse-workspace\\XConnect_Server\\dist\\conf\\test.properties";
+			File file = new File(success_file_path);
+			FileInputStream is = new FileInputStream(file);
+			Properties props = new Properties();
+			
+			//프로퍼티 파일을 읽어 properties 클래스에 로드
+			props.load(is);
+			
+			//프로퍼티 파일의 SERVER_ID라는 프로퍼티 값 가져오기
+			System.out.println(props.getProperty("SERVER_ID"));
+			
+			//프로퍼티값 추가
+			props.setProperty("test", "testproperty");
+			
+			//프로퍼티값 삭제
+			props.remove("test");
+			
+			//실제 프로퍼티 파일에 쓰기
+			props.store(new FileOutputStream(file), "writeproperty");
+			
+			//모든 프로퍼티 값 출력
+			props.list(System.out);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
