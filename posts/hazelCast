@@ -7,7 +7,8 @@
  메모리를 사용한다
  보통 객체를 저장한다(serialize)
  Lock, Transaction, Sharding을 지원한다
-
+ Clustering하게 되면 객체,파일 등등 sesialize한것들 Cluster된 다른 서버들이 역serialize를해서 사용되는것
+ (RMI는 각 서버마다 인스턴스가 생성되 있고 그것을 함수호출을 하는 것이라면, 하나의 인스터스로 작업을 여러곳에 실행시키는 것?으로 이해)
 2. hazelcast
 -java api만 사용하여 의존성이 없다
 -P2P 통신
