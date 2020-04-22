@@ -23,14 +23,21 @@ jws = str1.str2.str3 이런식으로 생성됨(str1 : HEADER, str2 : PAYLOAD, st
 기본적으로 프론트단에서 보내는 jwt가 서버에 저장된 값과 일치하는지 확인(토큰 만료되었는지도 검증)
 내가 사용하는 서버에서 만든 토큰인지 SIGNATURE키를 가지고 유효성 검증
 
-3. 파싱
+3. 파싱(실패하면 예외 발생)
 Jws<Claims> jws = Jwts.parser()
 				.setSigningKey(TextCodec.BASE64.decode(secretKey))
 				.parseClaimsJws(claimsJws);
-//유효시간 가져오기(유효시간을 가져와서 현재시간이랑 비교하는 로직등 사용가능)
-Date exp = jws.getBody().getExpiration();
+//유효시간 가져오기, 유효시간이 지났으면 에러 발생
+jws.getBody().getExpiration();
 //claims의 특정값 가져오기
 jws.getBody().get("key값");
+
+-파싱할떄 발생하는 Exception
+// UnsupportedJwtException  - if the claimsJws argument does not represent an Claims JWS 
+// MalformedJwtException    - if the claimsJws string is not a valid JWS
+// SignatureException       - if the claimsJws JWS signature validation fails
+// ExpiredJwtException      - if the specified JWT is a Claims JWT and the Claims has an expiration timebefore the time this method is invoked.
+// IllegalArgumentException - if the claimsJws string is null or empty or only whitespace
 
 4. Xconnector
 /*
