@@ -1,0 +1,54 @@
+-JWT token
+ 웹 프로젝트에서 로그인 및 인증에 대한 처리 방식
+ JJWT라이브러리 사용
+1. Decode했을때 형태
+-HEADER : 알고리즘 및 토큰타입을 기재
+-PAYLOAD(BODY) : 실 데이터가 있는 부분
+-SIGNATURE : 시그니쳐라고 토큰을 인코딩 및 유효성 검증할 때 사용하는 고유 시그니처 암호화 코드
+
+2. 토큰생성
+String secretKey = "UThQQUhBU0o1UFpTdlQ0SA==";
+String jws = Jwts.builder()
+				.setClaims(claims) //body부분
+				.setIssuer(issuer)
+				.setSubject(systemId) //body부분
+				.setAudience(clientId)
+				.setIssuedAt(Date.from(current))
+				.setExpiration(Date.from(effective)) //유효시간
+				.signWith(SignatureAlgorithm.HS256, TextCodec.BASE64.decode(secretKey))
+				.compact();
+jws = str1.str2.str3 이런식으로 생성됨(str1 : HEADER, str2 : PAYLOAD, str3 : SIGNATURE)
+
+보통 로그인시 jwt발급하고 jwt를 서버에 저장하고, 로그인 후 프론트단에서 jwt를 보내주며 유효성 검증
+기본적으로 프론트단에서 보내는 jwt가 서버에 저장된 값과 일치하는지 확인(토큰 만료되었는지도 검증)
+내가 사용하는 서버에서 만든 토큰인지 SIGNATURE키를 가지고 유효성 검증
+
+3. 파싱
+Jws<Claims> jws = Jwts.parser()
+				.setSigningKey(TextCodec.BASE64.decode(secretKey))
+				.parseClaimsJws(claimsJws);
+//유효시간 가져오기(유효시간을 가져와서 현재시간이랑 비교하는 로직등 사용가능)
+Date exp = jws.getBody().getExpiration();
+//claims의 특정값 가져오기
+jws.getBody().get("key값");
+
+4. Xconnector
+/*
+ * 사용자가 로그인을 할 때 
+ * AccessToken과 함께 그에 비해 긴 만료 시간을 갖는 RefreshToken을 함께 발급 
+ *  - e.g. : AccessToken은 24시간(1일)내외, RefreshToken은 30일(한달)정도의 만료 기간 부여
+ * 
+ * 클라이언트는 AccessToken이 만료되었다는 오류를 받으면 
+ * 따로 저장해두었던 RefreshToken을 이용하여 AccessToken의 재발급을 요청
+ *  
+ * 서버는 유효한 RefreshToken으로 요청이 들어오면 새로운 AccessToken을 발급하고, 
+ * 만료된 RefreshToken으로 요청이 들어오면 오류를 반환해, 사용자에게 로그인을 요구
+ */
+ 
+ -Controller에서 @requestbody Map<String, String>이랑, HttpServletReques 파라미터로 받아서
+  Map이랑 request에서 clintId와, clientSecret, clientIp를 추출해서 호출
+  Map<String, Object> keyMap = clientAuthManager.generateToken(clientId, clientSecret, clientIp);
+
+ -clientAuthManager.generateToken에서 jsonWebTokenUtil.generateToken을 호출해서 accessToken과 refreshToken을 생성해서 
+  테이블에서 확인해서 토큰정보가 있으면 업데이트 치고 없으면 인설트하고 토큰맵에 accessToken,refreshToken 두개 담아서 리턴
+  
