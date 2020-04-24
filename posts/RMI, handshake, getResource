@@ -1,0 +1,243 @@
+-handshake 및 서버리소스 구하기
+ 서버들끼리 서로 주기적으로 rmi방식으로 통신해서 master서버가 죽었을시 
+ 서버 리소스 사용량이 가장 적은 서버에게 master 역할부여
+
+1. 메인라우터에 서버리소스 정보 반환하는 rmi 라우터와 / handshake rmi 라우터 등록
+String myIpAddress = Inet4Address.getLocalHost().getHostAddress(); //myIpAddress = "127.0.0.1";
+from("rmi://" + myIpAddress + ":" + rmiPort + "/" + SystemCommonConstants.RMI_REGISTRY_NAME_SVR_RESOURCE + "?remoteInterfaces=com.service.monitoring.SystemInfoService")
+.bean(SystemInfoServiceImpl.class);
+from("rmi://" + myIpAddress + ":" + rmiPort + "/" + SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING + "?remoteInterfaces=com.service.monitoring.handshake.HandShakingService")
+.bean(HandShakingServiceImpl.class);
+
+remoteInterfaces에 들어가는 클래스가 rmi콜로해서 반환되는 클래스
+
+-remoteInterface들은 java.rmi.Remote를 상속받는다.
+ ->public interface HandShakingService extends Remote
+
+-각 메소드는 반드시 java.rmi.RemoteException 으로 예외 처리를 해주어야 한다.
+ try {
+	String public_ip_addr = eaiServerMap.get("PRIVATE_IP_ADDR").toString();
+	Registry registry = LocateRegistry.getRegistry(public_ip_addr, iHandShakingRmiPort);
+	HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
+
+	boolean areYouMaster = handshake.handshake();	// 너 죽었니 살았니? 살았으면 너가 Master 서버니?
+	if(areYouMaster) {
+		isThereMasterServer = true;	// 응답받은 서버중 Master 서버가 있음
+		break;															// 살아있는 서버가 Master이면 Handshaking을 진행하지 않음
+	}
+	} catch(RemoteException e) {
+		// RemoteException 발생시 죽은 서버로 판단한다.
+		deadServerNoList.add(svr_id);
+	}
+	
+-독립변수나 리턴값으로 넘겨지는 remote object 는 interface 에 정의된 메소드를 구현한 클래스(implementation class) 로 선언하지 말고 remote interface 로 선언해야 한다.
+ HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
+2. 서버 리소스 구하기
+ getCpuInfo - OperatingSystemMXBean osMxBean = ManagementFactory.getOperatingSystemMXBean();
+				osMxBean.getAvailableProcessors();
+				osMBean.getSystemCpuLoad() * 100;
+ getMemoryInfo - MemoryMXBean memMxBean = ManagementFactory.getMemoryMXBean();
+					memMxBean.getHeapMemoryUsage().getMax()
+					memMxBean.getHeapMemoryUsage().getUsed()
+					memMxBean.getHeapMemoryUsage().getInit()
+					memMxBean.getNonHeapMemoryUsage().getMax()
+					memMxBean.getNonHeapMemoryUsage().getUsed()
+					memMxBean.getNonHeapMemoryUsage().getInit()
+			   - com.sun.management.OperatingSystemMXBean osBean = (com.sun.management.OperatingSystemMXBean)ManagementFactory.getOperatingSystemMXBean();
+					long totalOsMem = osBean.getTotalPhysicalMemorySize();
+					long freeOsMem = osBean.getFreePhysicalMemorySize();
+					long totalOsSwapMem = osBean.getTotalSwapSpaceSize();
+ getDiskInfo - File[] diskList = File.listRoots(); 
+				for(File rootFile : diskList) {
+				Map<String, Object> resultMap = new HashMap<String, Object>();
+				resultMap.put(SystemInfoService.DISK_ROOT_PATH, 			rootFile.getAbsolutePath());
+				resultMap.put(SystemInfoService.DISK_TOTAL_SPACE, 			rootFile.getTotalSpace());
+				resultMap.put(SystemInfoService.DISK_USABLE_SPACE, 			rootFile.getUsableSpace());
+				resultMap.put(SystemInfoService.DISK_FREE_SPACE, 			rootFile.getFreeSpace());
+				resultList.add(resultMap);
+			}
+ getThreadInfo - ThreadMXBean threadMxBean = ManagementFactory.getThreadMXBean();
+					resultMap.put(SystemInfoService.THREAD_CURRENT_COUNT, 			threadMxBean.getThreadCount());
+					resultMap.put(SystemInfoService.THREAD_CURRENT_CPU_TIME, 		threadMxBean.getCurrentThreadCpuTime());
+					resultMap.put(SystemInfoService.THREAD_CURRENT_USER_TIME, 		threadMxBean.getCurrentThreadUserTime());
+					resultMap.put(SystemInfoService.THREAD_DAEMON_COUNT, 			threadMxBean.getDaemonThreadCount());
+					resultMap.put(SystemInfoService.THREAD_PEAK_COUNT, 				threadMxBean.getPeakThreadCount());
+ getClassLoadingInfo - ClassLoadingMXBean classMxBean = ManagementFactory.getClassLoadingMXBean();
+							resultMap.put(SystemInfoService.CLASS_TOTAL_LOADED, 			classMxBean.getTotalLoadedClassCount());
+							resultMap.put(SystemInfoService.CLASS_CUR_LOADED, 				classMxBean.getLoadedClassCount());
+							resultMap.put(SystemInfoService.CLASS_CUR_UN_LOADED, 			classMxBean.getUnloadedClassCount());
+							
+3. handshake
+Registry registry = LocateRegistry.getRegistry(rmi날릴 서버의 아이피, rmi port(카멜 라우터에 rmi등록했던 포트번호));
+HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
+Map<String, Object> svrRsc = handshake.getServerRscInfo();				// 너의 서버 자원을 알려다오
+
+4. handshakeProcessor
+@Component("handshakeProcessor")
+public class HandshakeProcessor implements Processor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(HandshakeProcessor.class);
+
+	@Autowired
+	private HandShakingProcessorDAO handShakingProcessorDAO;
+	@Autowired
+	private HandShakingService handShakingService;
+	@Value("${SERVER_ID: SVR0000001}")
+	private String thisServerID;
+	
+	private static final int iHandShakingRmiPort = 38088;
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : TB_COM_EAI_SVR_INFO 테이블에 기록된 XConnector EAI Server 리스트 별로 Handshake 를 요청하여 죽었나 살았나를 판단한다.
+	 * 2. 처리내용 : a. 내가 master이면 다른 서버 handshaking 할 필요 없음
+	 *            b. 다른 모든 서버가 master 가 아니면 (즉, master 서버가 죽었으면) 살아있는 모든 서버의 현재 자원 사용율을 요청한다.
+	 *            c. 자원 사용율이 제일 낮은 서버를 새로운 master 서버로 선출한다.
+	 * </pre>
+	 * @see org.apache.camel.Processor#process(org.apache.camel.Exchange)
+	 * @param exchange
+	 * @throws Exception
+	 */
+	@Override
+	public void process(Exchange exchange) throws Exception {
+		try {
+			boolean isMaster = CamelHelper.getInstance().isMaster();
+			
+			// Master 서버가 아니면 interfaceLog 큐를 listen하는 라우터 stop
+			// Master 서버이면 interfaceLog 큐를 listen하는 라우터 start
+			CamelHelper.getInstance().setMaster(isMaster);
+			
+			// 본서버가 Master 서버이면 다른서버 Handshaking 할 필요 없음
+			if(isMaster) return;
+			
+			// DB 정보에서 EAI 서버 리스트를 가져온다.
+			List<Map<String, Object>> eaiServerList = handShakingProcessorDAO.selectEaiServerInfoList();
+			
+			///////////////////////////////////////////////////////////////////////////////////////////
+			// 1. STEP 1:: 각 EAI 서버에 handshake RMI 명령을 날려 응답을 받는다.
+			// 응답을 받지 못한경우 dead server로 판단하며 dead server가 Master 서버인 경우 Master 서버를 새로 선출한다.
+			List<String> deadServerNoList = new ArrayList<String>();
+			// 응답받은 서버중 Master 서버가 있는지 여부 판단할 flag
+			boolean isThereMasterServer = false;
+			for(Map<String, Object> eaiServerMap : eaiServerList) {
+				String svr_id = eaiServerMap.get("SVR_ID").toString();
+				if(!svr_id.equalsIgnoreCase(thisServerID)) {
+					try {
+						String public_ip_addr = eaiServerMap.get("PRIVATE_IP_ADDR").toString();
+						Registry registry = LocateRegistry.getRegistry(public_ip_addr, iHandShakingRmiPort);
+						HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
+
+						boolean areYouMaster = handshake.handshake();						// 너 죽었니 살았니? 살았으면 너가 Master 서버니?
+						if(areYouMaster) {
+							isThereMasterServer = true;										// 응답받은 서버중 Master 서버가 있음
+							break;															// 살아있는 서버가 Master이면 Handshaking을 진행하지 않음
+						}
+					} catch(RemoteException e) {
+						// RemoteException 발생시 죽은 서버로 판단한다.
+						deadServerNoList.add(svr_id);
+					}
+				}
+			}
+
+			///////////////////////////////////////////////////////////////////////////////////////////
+			// 2. STEP 2:: 죽은 서버가 존재하고 살아있는 서버중 Master 서버가 없으면 Master 서버를 새로이 선출함
+			if(deadServerNoList.size() > 0 && !isThereMasterServer) {
+				// 새로이 Master 서버를 선출할 서버 리스트를 만든다. (죽은 서버 제외, 본인 서버 제외)
+				List<Map<String, Object>> checkServerList = new ArrayList<Map<String, Object>>();
+				for(Map<String, Object> eaiServerMap : eaiServerList) {
+					String svr_id = eaiServerMap.get("SVR_ID").toString();
+					boolean is_dead_server_flag = false;
+					if(!svr_id.equalsIgnoreCase(thisServerID)) {
+						for(String dead_svr_id : deadServerNoList) {
+							if(dead_svr_id.equalsIgnoreCase(svr_id)) is_dead_server_flag = true;
+						}
+					} else is_dead_server_flag = true;
+					
+					if(!is_dead_server_flag) checkServerList.add(eaiServerMap);
+				}
+
+				// 본인 서버 리소스 및 살아있는 서버들의 리소스 계산
+				Map<String, Object> myRsc = handShakingService.getServerRscInfo();
+				Map<String, Double> svrRscListMap = new HashMap<String, Double>();
+				svrRscListMap.put(thisServerID, (double)myRsc.get(HandShakingService.MEM_USAGE_PERCENT));
+				for(Map<String, Object> eaiServerMap : checkServerList) {
+					String svr_id = eaiServerMap.get("SVR_ID").toString();
+					String public_ip_addr = eaiServerMap.get("PUBLIC_IP_ADDR").toString();
+					Registry registry = LocateRegistry.getRegistry(public_ip_addr, iHandShakingRmiPort);
+					HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
+					Map<String, Object> svrRsc = handshake.getServerRscInfo();				// 너의 서버 자원을 알려다오
+					svrRscListMap.put(svr_id, (double)svrRsc.get(HandShakingService.MEM_USAGE_PERCENT));
+				}
+
+				// 메모리 점유율이 제일 낮은 서버를 새로운 Master 서버로 선출한다. (Acceding sort)
+				Stream<Map.Entry<String, Double>> sortedMap = svrRscListMap.entrySet().stream().sorted(Map.Entry.comparingByValue());
+				String masterCandidateServerNo = sortedMap.findFirst().get().getKey();
+				// 만일 내가 마스터로 선출되었다면...
+				if(masterCandidateServerNo.equalsIgnoreCase(thisServerID)) {
+					CamelHelper.getInstance().setMaster(true);
+					return;
+				}
+				// 아니면 다른 마스터 서버로 선출된 놈에게 master server를 셋팅한다.
+				for(Map<String, Object> eaiServerMap : eaiServerList) {
+					String svr_id = eaiServerMap.get("SVR_ID").toString();
+					if(svr_id.equalsIgnoreCase(masterCandidateServerNo)) {
+						String public_ip_addr = eaiServerMap.get("PUBLIC_IP_ADDR").toString();
+						Registry registry = LocateRegistry.getRegistry(public_ip_addr, iHandShakingRmiPort);
+						HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
+						handshake.setMasterNode(true);										// 너가 이제부터 새로운 Master 서버다.
+						break;
+					}
+				}
+			}
+
+		} catch (Exception e) {
+			LOG.error("[HandshakeProcessor] >> process :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+}
+
+5. HandShakingServiceImpl
+@Service("handShakingService")
+public class HandShakingServiceImpl implements HandShakingService {
+
+	private static final Logger LOG = LoggerFactory.getLogger(HandShakingServiceImpl.class);
+
+	@Override
+	public boolean handshake() throws RemoteException {
+		try {
+			return CamelHelper.getInstance().isMaster();
+		} catch (Exception e) {
+			throw e;
+		}
+	}
+
+	@Override
+	public Map<String, Object> getServerRscInfo() throws RemoteException {
+		try {
+			SystemInfoService sysInfoSvc = CamelHelper.getInstance().getContext().getBean("systemInfoService", SystemInfoService.class);
+			Map<String, Object> memInfo = sysInfoSvc.getMemoryInfo();
+			List<Map<String, Object>> diskInfo = sysInfoSvc.getDiskInfo();
+			
+			double mem_use_per		= Double.valueOf(memInfo.get(SystemInfoService.MEM_HEAP_USED).toString()).doubleValue() 
+										/ Double.valueOf(memInfo.get(SystemInfoService.MEM_HEAP_MAX).toString()).doubleValue() * 100;
+			double disk_free_per	= Double.valueOf(diskInfo.get(0).get(SystemInfoService.DISK_USABLE_SPACE).toString()).doubleValue() 
+										/ Double.valueOf(diskInfo.get(0).get(SystemInfoService.DISK_TOTAL_SPACE).toString()).doubleValue() * 100;
+
+			Map<String, Object> resInfoMap = new HashMap<String, Object>();
+			resInfoMap.put(HandShakingService.MEM_USAGE_PERCENT, mem_use_per);
+			resInfoMap.put(HandShakingService.DISK_FREE_PERCENT, disk_free_per);
+			return resInfoMap;
+		} catch (Exception e) {
+			throw e;
+		}
+	}
+
+	@Override
+	public void setMasterNode(boolean isMaster) throws RemoteException {
+		CamelHelper.getInstance().setMaster(isMaster);
+	}
+
+}
