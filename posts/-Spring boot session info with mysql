@@ -1,0 +1,101 @@
+-Spring boot session info with mysql(https://teraphonia.tistory.com/780)
+ Springboot에서 Session 정보를 Mysql DB에 연동하는 방법
+
+1. Dependency(Maven)
+-pom.xml
+<dependency>
+    <groupId>org.springframework.session</groupId>
+    <artifactId>spring-session-jdbc</artifactId>
+</dependency>
+
+<dependency>
+<groupId>mysql</groupId>
+    <artifactId>mysql-connector-java</artifactId>
+    <version>5.1.6</version>
+</dependency>
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-jdbc</artifactId>
+</dependency>
+
+2. application.properties 및 jdbc Session 적용
+
+# session config
+spring.session.store-type=jdbc
+server.servlet.session.timeout=1800
+/*///////////////
+spring.datasource.url=jdbc:mysql:DB서버 IP/DB 이름
+spring.datasource.username=ID입력
+spring.datasource.password=PW입력
+spring.datasource.driver-class-name=com.mysql.jdbc.Driver
+*/////////////
+위에 주석처리 된 부분은 datasource.xml파일에 설정을 해둬서 빈으로 등록된 것을
+HttpSessionConfig에 사용하면 생략가능하다
+-datasource.xml
+	<bean id="serverBasicDataSources" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+    	<property name="driverClassName" value="${jdbc.mariadb.driver}" />
+        <property name="url" value="${jdbc.mariadb.url}" />
+        <property name="username" value="${jdbc.mariadb.username}" />
+        <property name="password" value="${jdbc.mariadb.password}" />
+        <property name="initialSize" value="2"/>
+	    <property name="maxTotal" value="20"/>
+        <property name="maxIdle" value="15"/>
+	    <property name="validationQuery" value="SELECT 1 "/>
+	    <property name="testWhileIdle" value="true"/>
+	    <property name="removeAbandonedOnBorrow" value="true"/>
+	    <property name="removeAbandonedOnMaintenance" value="true"/>
+	    <property name="maxWaitMillis" value="1000"/>
+	    <property name="timeBetweenEvictionRunsMillis" value="300000"/>
+	    <property name="defaultAutoCommit" value="true"/>
+	</bean>
+
+-HttpSessionConfig에
+import javax.sql.DataSource;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.session.jdbc.config.annotation.web.http.EnableJdbcHttpSession;
+
+@Configuration
+@EnableJdbcHttpSession
+public class HttpSessionConfig에 {
+	@Autowired
+	@Qualifier("serverBasicDataSources")
+	private DataSource dataSource;
+	
+	/*
+	 * DataSource를 특정 Qualifier로 지정하지 않으면 여러 DataSource가 등록되었을때 오류가 난다.
+	 */
+	@Bean
+	public DataSource dataSource() {
+		return this.dataSource;
+	}
+}
+
+3. mysql에 테이블이 생성된다 
+-SPRING_SESSION : 생성시간, 등의 Session의 기본 속성에 대한 데이터를 저장
+-SPRING_SESSION_ATTRIBUTES : 유저의 Token Key와 저장한 데이터의 Key/Value 정보가 저장
+
+CREATE TABLE SPRING_SESSION (
+    SESSION_ID CHAR(36),
+    CREATION_TIME BIGINT NOT NULL,
+    LAST_ACCESS_TIME BIGINT NOT NULL,
+    MAX_INACTIVE_INTERVAL INT NOT NULL,
+    PRINCIPAL_NAME VARCHAR(100),
+    CONSTRAINT SPRING_SESSION_PK PRIMARY KEY (SESSION_ID)
+) ENGINE=InnoDB;
+
+CREATE INDEX SPRING_SESSION_IX1 ON SPRING_SESSION (LAST_ACCESS_TIME);
+
+CREATE TABLE SPRING_SESSION_ATTRIBUTES (
+    SESSION_ID CHAR(36),
+    ATTRIBUTE_NAME VARCHAR(200),
+    ATTRIBUTE_BYTES BLOB,
+    CONSTRAINT SPRING_SESSION_ATTRIBUTES_PK PRIMARY KEY (SESSION_ID, ATTRIBUTE_NAME),
+    CONSTRAINT SPRING_SESSION_ATTRIBUTES_FK FOREIGN KEY (SESSION_ID) REFERENCES SPRING_SESSION(SESSION_ID) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX SPRING_SESSION_ATTRIBUTES_IX1 ON SPRING_SESSION_ATTRIBUTES (SESSION_ID);
