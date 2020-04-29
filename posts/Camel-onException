@@ -37,3 +37,31 @@ onException(XConnectEaiServerException.class).handled(true)  //.continued(false)
  “continued=true”를 사용하게 된다면 exception이 발생하더라도 무시하고 기존 routing 진행 <onException>을 쓰지 않고 continue 기능을 사용하고 싶다면, try/catch/finally을 이용해야 한다.
  주의점 : 하나의 <onException>에 handled와 continued를 같이 사용할 수 없다.
 
+EX)
+onException(StepBackException.class).log(“error sent back to caller”);
+onException(HandledErrorException.class).handled(true).setBody(constant(“error handled”)).to(“des:errorhandle)
+onException(IgnoreErrorException.class).continue(true);
+
+이 코드는 별도의 ErrorHandler를 지정하지 않았기 때문에, Default Handler로 작동하고,
+StepBackException 이 발생하면 앞단계로 Error 를 propagate하고 Route를 종료한다.
+HandledErrorException이 발생하면 handled(true)를 세팅하였기 때문에, setBody~ 부터의 흐름을 진행하여, des:errorhandle로 메세지를 전달한다.
+IgnoreErrorException 이 발생하면, continue(true)에 의해서 에러를 무시하고 to(des:end)를 그대로 진행한다.
+
+(2) DeadLetterChannel
+Error가 발생되었을때, DeadLetterChannel로 메세지를 전송한다. 일반적으로 Message Queue 메카니즘을 사용할때 쓰는 일종의 ErrorQueue로 생각하면 된다.
+RouterBuilder Class에서
+public void configure(){
+ errorHandler(deadLetterChannel("jms:queue:error_queue"));
+ from(…)…
+ to(…)..
+}
+와 같이 정의 해놓으면, 에러가 발생하였을때, 메세지를 JMS의 error_queue로 전송한다.
+
+(3) LogErrorHandler
+에러가 발생하였을 때, 설정된 Log4J등의 Logger를 통해서 에러를 출력한다.
+그 외에 TransactionErrorHandler와 NoErrorHandler 등이 있다.
+이 ErrorHandler들은 CamelContext에 적용하여 Context에 binding된 전체 Route들에 적용할 수도 있고, 또는 개개별 Route에만 적용할 수 도 있다.
+에러의 재처리
+DefaultErrorHandler의 경우, 에러가 발생하였을때, 재처리를 하도록 설정할 수 있다.
+errorHandler(defaultErrorHandler().maximumRedeliveries(5))
+로 지정하면 5번 Retry를 하게 된다. 물론, retry 간격등이나, retry시 logging 등 다양한 옵션을 지정할 수 있다.
