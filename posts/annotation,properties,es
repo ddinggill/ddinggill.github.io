@@ -1,6 +1,6 @@
 -Annotation 정리
-1. @Component는 개발자가 직접 작성한 Class를 Bean으로 만드는 것이고,
-   @Bean은 개발자가 작성한 Method를 통해 반환되는 객체를 Bean으로 만드는 것이다.(@Bean method를 작성하는 클래스는 보통 @Configuration으로)
+1. @Component는 개발자가 직접 작성한 Class를 Bean으로 만드는 것이고, default로 클래스 이름이 bean의 이름이 된다.
+   @Bean은 개발자가 작성한 Method를 통해 반환되는 객체를 Bean으로 만드는 것이고, default로 메소드 이름이 bean이름이 된다.(@Bean method를 작성하는 클래스는 보통 @Configuration으로)
    ex)ES설정관련 @Configuration클래스에서 @Bean로 TransportClient,RestHighLevelClient 를 생성해서 빈으로 등록하고, ES매니저클래스에서는 생성자에 객체를 @Autowired 주입해서 사용
 
 2. 의존성 주입관련(@Autowired, @Resource, @Inject)
