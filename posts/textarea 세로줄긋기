@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8"/>
+	<meta http-equiv="Cache-Control" content="no-cache"/>
+	<meta http-equiv="Expires" content="0"/>
+	<meta http-equiv="Pragma" content="no-cache"/>
+	<script src="/static/js/jquery/jquery-3.3.1.js"></script>
+	<script src="/static/js/jquery/jquery.js"></script>
+	<script src="/static/js/jquery/jquery-ui.js"></script>
+	<script src="/static/js/eventsource/eventsource.js"></script>
+	<title>text area test</title>
+	
+	<style type="text/css">
+	.notes {
+	    background-attachment: local;
+	    background-image: repeating-linear-gradient(to right, white 0 6.5px, #EAEAEA 6.5px 7px);
+	    padding: 0px;
+	    font-family: "Noto San KR", monospace !important;
+	    font-size: 13px;
+	}
+
+        .notes:focus
+        {
+            outline: none;
+        } 
+
+	</style>
+</head>
+<body>
+	<!-- <div class="textarea-wrapper"> -->
+		<textarea class="notes"></textarea>
+		<!-- <textarea class="notes1"></textarea> -->
+	<!-- </div> -->
+</body>
+</html>
