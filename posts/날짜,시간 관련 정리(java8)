@@ -1,0 +1,102 @@
+-날짜,시간 관련 정리(java8)
+
+1. 기존 날짜 시간관련 api문제점(Date, Calendar, Timestamp 클래스 등)
+-불변객체가 아니여서 side-effect에 안전하지 않다.
+-int 상수 필드가 많아서 잘못 입력하더라도 컴파일 시점에 오류를 확인할 수 없다.
+-JDK 1.0 Date 클래스에서 1월을 0으로 표현하면서 누구나 크리티컬할 수 있는 실수를 반복한다.
+-Date와 Calendar의 역할 분담이 다소 명확하지 않다.
+-잘못 시간대를 지정해도 오류를 발견하기 어렵다.
+-Date를 상속한 하위 클래스들에도 문제가 많다.
+
+2. 날짜, 시간 다루기
+ 1)Instant - 타임라인의 특정 순간을 나타내는 클래스로, TimeStamp 와 달리 Immutable(불변) 하고 thread-safe하다.
+	Instant today = Instant.now(); //현재 UTC시간 ex)2020-05-06T04:27:11.174Z
+	today.getEpochSecond(); // GMT 이후의 offset ex)1588739566
+	today.minusSeconds(10); //10초 뺀시간
+	
+	기존방식
+	Calendar calendar = Calendar.getInstance();
+	calendar.add(Calendar.SECOND,5);
+	System.out.println(calendar.getTime());
+	
+	날짜비교
+	Instant current = Instant.now();
+	Instant afterTenSec = current.plusSeconds(10);
+ 
+	System.out.println("before : " + current.isBefore(afterTenSec)); //true
+	System.out.println("after : " + current.isAfter(afterTenSec)); //false
+
+	=> 기존방식보다 좀더 직관적
+
+ 2)LocalDate - [년,월,일]과 같은 날짜만 표현하는 클래스 (시간은 포함하지 않는다)
+ 3)LocalTime - [시,분,초]와 같이 시간만 표현하는 클래스
+ 4)LocalDateTime - [년,월,일,시,분,초]를 표현하는 클래스 (LocalDate와 함께 가장 많이 쓰이는 클래스가 될 것 같다)
+ 5)Period - 두 날짜 사이의 [년,월,일]로 표현되는 기간 (시간을 다루지 않다 보니 LocalDate를 사용한다)
+ 6)Duration - 두 시간 사이의 [일,시,분,초]로 표현되는 기간 (Instant 클래스를 사용하고, seconds와 nanoseconds로 측정 되지만 [일,시,분,초]로 변환해 주는 메쏘드를 제공)
+
+3. 자주 쓰는 메쏘드들
+ 1)날짜 가져오기
+	LocalDate now = LocalDate.now(); //2020-05-06
+	LocalDate now = LocalDate.of(2020, 4, 17); //2020-04-17로 초기화
+	LocalDateTime now1 = LocalDateTime.now(); //2020-05-06T14:08:50.741
+	LocalDateTime now1 = LocalDateTime.of(2020, 12, 17, 13, 23, 23); // 2020-12-17T13:23:23로 초기화
+	
+ 2)기간 가져오기
+	Period.ofYears(2); // 2년간(P2Y) 
+	Period.ofMonths(5); // 5개월간(P5M) 
+	Period.ofWeeks(3); // 3주간(P21D) 
+	Period.ofDays(20); // 20일간(P20D) 
+	Duration.ofDays(2); // 48시간(PT48H) 
+	Duration.ofHours(8); // 8시간(PT8H) 
+	Duration.ofMinutes(10); // 10분간(PT10M) 
+	Duration.ofSeconds(30); // 30초간(PT30S)
+
+ 3)날짜+기간 = 날짜
+	LocalTime.of(9, 0, 0).plus(Duration.ofMinutes(10)); // (9시 + 10분간) = 9시10분 
+	LocalDate.of(2015, 5, 15).plus(Period.ofDays(1)); // (2015년5월15일 + 1일간) = 2015년5월16일 
+	LocalDateTime.of(2015, 4, 17, 23, 47, 5).minus(Period.ofWeeks(3)); // (2015년4월17일 23시47분05초 - 3주간) = 2015년3월27일 23시47분05초 
+	LocalDate.now().plusDays(1); // (오늘 + 1일) = 내일 
+	LocalTime.now().minusHours(3); // (지금 - 3시간) = 3시간 전
+
+ 4)날짜-날짜 = 기간
+	Period.between(LocalDate.of(1950, 6, 25), LocalDate.of(1953, 7, 27)); // (1953년7월27일 - 1950년6월25일) = 3년1개월2일간(P3Y1M2D) 
+	Period.between(LocalDate.of(1950, 6, 25), LocalDate.of(1953, 7, 27)).getDays(); // 3년1개월2일간 => 2일간 
+	LocalDate.of(1950, 6, 25).until(LocalDate.of(1953, 7, 27), ChronoUnit.DAYS); // 3년1개월2일간 => 1128일간 
+	ChronoUnit.DAYS.between(LocalDate.of(1950, 6, 25), LocalDate.of(1953, 7, 27)); // 3년1개월2일간 => 1128일간 
+	Duration.between(LocalTime.of(10, 50), LocalTime.of(19, 0)); // (19시00분00초 - 10시50분00초) = 8시간10분간(PT8H10M) 
+	Duration.between(LocalDateTime.of(2015, 1, 1, 0, 0), LocalDateTime.of(2016, 1, 1, 0, 0)).toDays(); // 365일간 
+	ChronoUnit.YEARS.between(LocalDate.of(2015, 5, 5), LocalDate.of(2017, 2, 1)); // 1년간
+
+ 5)날짜 변환하기
+	1.LocalDate -> String
+		LocalDate.of(2020, 12, 12).format(DateTimeFormatter.BASIC_ISO_DATE); // 20201212
+	2.LocalDateTime -> String
+		LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")); // 2015-04-18 00:42:24
+	3.LocalDateTime -> java.util.Date
+		Date.from(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant()); // Sat Apr 18 01:00:30 KST 2015
+	4.LocalDate -> java.sql.Date
+		Date.valueOf(LocalDate.of(2015, 5, 5)); // 2015-05-05
+	5.LocalDateTime -> java.sql.Timestamp
+		Timestamp.valueOf(LocalDateTime.now()); // 2015-04-18 01:06:55.323
+	6.String -> LocalDate
+		LocalDate.parse("2002-05-09"); // 2002-05-09 
+		LocalDate.parse("20081004", DateTimeFormatter.BASIC_ISO_DATE); // 2008-10-04
+	7.String -> LocalDateTime
+		LocalDateTime.parse("2007-12-03T10:15:30"); // 2007-12-03T10:15:30 
+		LocalDateTime.parse("2010-11-25 12:30:00", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")); // 2010-11-25T12:30
+	8.Date -> Instant
+		Date date = new Date();
+		Instant now = date.toInstant();
+	9.Date -> LocalDate
+		Date date = new Date();
+
+		LocalDate ldt1 = date.toInstant()
+		  .atZone(ZoneId.systemDefault())
+		  .toLocalDate();
+
+		LocalDate ldt2 = Instant.ofEpochMilli(date.getTime())
+		  .atZone(ZoneId.systemDefault())
+		  .toLocalDateTime();
+
+		LocalDate ldt3 = new java.sql.Date(date.getTime()).toLocalDateTime();
+		
