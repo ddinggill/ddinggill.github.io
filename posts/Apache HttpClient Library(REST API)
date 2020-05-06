@@ -1,0 +1,30 @@
+-Apache HttpClient Library(REST API)
+
+	1. ClosableHttpClient 인스턴스를 생성
+	2. HTTP request type에 따른 HttpGet/HttpPost 인스턴스 생성
+	3. addHeader 메서드를 이용해 헤더정보 추가
+	4. request를 execute해서 CloseableHttpResponse 얻기
+	5. response 출력
+	6. close 메서드를 통해 연결 종료
+
+-ClosableHttpClient 인스턴스를 생성
+CloseableHttpClient httpClient = HttpClients.createDefault();
+
+-HTTP request type에 따른 HttpGet/HttpPost 인스턴스 생성
+String targetUrl = "https://localHost:8081";
+HttpGet request = new HttpGet(targetUrl);
+HttpPost httppost = new HttpPost("http://10.10.152.252:7071/services/receive");
+
+-addHeader 메서드를 이용해 헤더정보 추가 및 메시지 추가
+httppost.setHeader("Authorization", "Basic Z2VuZXNpc2RpaDppbXNpITEyMzQ=");
+//json 데이터를 Get request를 통해 받아와야 하는 경우에 헤더정보 Content-type에 "application/json" 추가하고 요청
+httppost.setHeader("Content-type", "application/json");
+//파일을 읽어서 json형태로 만든 데이터를 전송
+StringEntity postingString = new StringEntity(successData);
+httppost.setEntity(postingString);
+
+-request를 execute해서 CloseableHttpResponse 얻기, response 출력
+CloseableHttpResponse response = httpClient.execute(httppost);
+HttpEntity entity = response.getEntity();
+String responseString = EntityUtils.toString(entity, "UTF-8");
+System.out.println(responseString);
