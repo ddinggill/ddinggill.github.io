@@ -1,0 +1,15 @@
+-curl
+
+1. 사용방법
+ curl -X POST -H "header..." -H "header..." http://www.example.com/curl/test -d "data..."
+ curl -X POST -H "header..." -H "header..." -d "data..." http://www.example.com/curl/test
+
+ -X : 사용할 Method를 적는 곳이다. (Ex: GET, POST)
+ -H : 전송시에 추가 할 헤더 (EX: -H "Content-Type: application/json") 여러개의 헤더가 필요 할때에는 헤더 하나당 -H 옵션 하나씩 붙여서 전송.
+ -d : body에 들어갈 데이터 추가하는 부분
+ -마지막의 인자는 보내야 할 곳의 url 주소
+ -주의사항 : body가 될 부분에서 주의 할 점은 더블쿼터의 경우 꼭 '\'를 사용해야 한다
+ 
+2. 예제
+curl -X POST -H "Content-Type:application/json" -H "Name:name" http://localhost:7071/REST -d "{\"request\":{\"header\":{\"ifId\":\"IF_CN_CXP_HQ-EAI_0020\",\"ifVer\":\"v001\",\"ifSenderGrp\":\"CN\",\"ifSender\":\"CXP\",\"ifReceiverGrp\":\"CN\",\"ifReceiver\":\"HQ-EAI\",\"ifRouteId\" :\"IF_CN_ERP_CXP_0020\",\"ifTrackingId\":\"4bc68e26-f318-4812-ae29-ac1ea8ea4e33\",\"ifDateTime\":\"20191225055418\"},\"payload\":{\"ifTotCnt\":\"7\",\"T_DATA\":[{\"OTD_CODE\":\"CA10\",\"C_STATUS\":\"\",\"OTD_CODE_DESC\":\"SHIPPING\",\"ACT_DATE\":\"20191009\",\"VHCLE\":\"0000000011\",\"EST_DATE\":\"00000000\"},{\"OTD_CODE\":\"CA10\",\"C_STATUS\":\"\",\"OTD_CODE_DESC\":\"SHIPPING\",\"ACT_DATE\":\"20191009\",\"VHCLE\":\"0000000011\",\"EST_DATE\":\"00000000\"}]}}}"
+
