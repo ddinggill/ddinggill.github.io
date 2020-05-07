@@ -1,0 +1,39 @@
+-HTTP Authorization 
+ Authorization 헤더는 인증 토큰(JWT든, Bearer 토큰이든)을 서버로 보낼 때 사용하는 헤더입니다. API 요청같은 것을 할 때 토큰이 없으면 거절당하기 때문에 이 때, Authorization을 사용하면 됩니다.
+ Authorization: Bearer XXXXXXXXXXXXX
+ 보통 Basic이나 Bearer같은 토큰의 종류를 먼저 알리고 그 다음에 실제 토큰 문자를 적어 보냅니다.
+ 
+1.문법
+ Authorization: <type> <credentials>
+ <type> : 인증 타입, 보통 "Basic" 또는 "Bearer"
+ <credentials>
+	-"Basic"인 경우, 사용자명과 비밀번호가 콜론을 이용하여 합쳐집니다(aladdin:opensesame)
+	-그 결과에 대한 문자열을 base64 로 인코딩합니다 (YWxhZGRpbjpvcGVuc2VzYW1l)
+
+2.예제
+	Authorization: Basic YWxhZGRpbjpvcGVuc2VzYW1l
+	
+3.그래서 서버쪽에서 요청받으면 header에서 Authorization파싱해서 사용
+camel route에서 exchange headers 모든값들을 읽어 Map에 세팅
+HttpServletRequest servletRequest = exchange.getIn().getHeader("CamelHttpServletRequest", HttpServletRequest.class);
+Enumeration<String> headers = servletRequest.getHeaderNames();
+
+while(httpHeaderNames.hasMoreElements()) {
+	String httpHeaderKey = httpHeaderNames.nextElement();
+	httpHeaderMap.put(httpHeaderKey, servletRequest.getHeader(httpHeaderKey));
+}
+
+String authorization = request.getHeader("Authorization");
+//Basic YWxhZGRpbjpvcGVuc2VzYW1l 형식으로 오니까 "Basic" 이부분이 method, 뒷부분이 auth_credentials
+String auth_method = (authorization != null && !authorization.isEmpty()) ? authorization.split(" ")[0] : ""; 
+String auth_credentials = (authorization != null && !authorization.isEmpty() && authorization.split(" ").length > 1) ? authorization.split(" ")[1] : "";
+
+//base64로 인코딩해온 정보를 디코딩하면
+//basic 방식일 경우 userId:userPw의 포맷이다
+String decodedString = new String(org.apache.commons.codec.binary.Base64.decodeBase64(auth_credentials));
+
+//userId:userPw의 포맷의 문자열을 다시 ":"로 split해서 userId와 userPw를 얻어와 필요한 인증 로직처리(인증관련 테이블에서 ID/PW, Access Ip등등)
+String userId = decodedString.split(":")[0];
+String userPwd = decodedString.split(":")[1];
+
+//Bearer방식일 경우는 jwt_token을 파싱해서 인증
