@@ -32,7 +32,9 @@
 3. SOAP방식은 soapMessageParser에 의해서 요청을 파싱해서 requestMsg형태로 만들어서 exchange.getIn.setBody에 세팅
    그리고 다이나믹 라우터로 태워서 알맞은 인터페이스 라우터로 데이터 보낸다.
    
-4. 개발화면에서 request 데이터로 맵핑을 하게되면 맵핑룰(리스트 형태)이 만들어지고 이를 bean으로 올린다.
+4. 개발화면에서 request 데이터로 맵핑등 인터페이스 개발을 하게되면 맵핑룰(리스트 형태)이나 프로퍼티,인터페이스 정보들을 json소스로 인터페이스 개발테이블에 올리고
+   인터페이스 mast테이블에 commit할때 json소스 칼럼을 서버에서 파싱해서 xml소스와 bean스크립트를 생성한다.
+
    <util:list id="IF_CN_CXP_DAOS_0001_v001-mappingRuleList-1">
 	<value>header.ifId=header.ifId</value>
 	<value>header.ifVer=header.ifVer</value>
