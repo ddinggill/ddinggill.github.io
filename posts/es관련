@@ -426,3 +426,135 @@ public class ElasticSearchLogInsertHandler implements Processor{
 	}
 
 }
+
+4. ElasticSearchLogHandler
+
+/*
+ * Copyright Hyundai Auto Ever.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai Auto Ever. ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.common.elasticsearch; 
+
+import java.util.Date;
+import java.util.Map;
+
+import javax.annotation.Resource;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.common.util.CamelHelper;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.common.util.LogSummaryManager;
+import com.xconnect.eai.server.common.vo.BigDataDocument;
+import com.xconnect.eai.server.service.monitoring.InterfaceStatusMonitor;
+import com.xconnect.eai.server.service.webpush.ApplicationEventHandler;
+import com.xconnect.eai.server.service.webpush.IfLogPushMessageVO;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.common.elasticsearch 
+ *    |_ ElasticSearchLogHandler.java
+ * 
+ * 인터페이스 로그 큐(IF_LOG_QUEUE)에 들어온 로그데이터를 
+ * CamelHelper의 bigdataDocumentList에 넣는다.
+
+ * </pre> 
+ * @date : 2020. 1. 22. 오후 4:12:11
+ * @version : 
+ * @author : A932060
+ */
+@Component("elasticSearchLogHandler")
+public class ElasticSearchLogHandler implements Processor{
+
+	private static final Logger LOG = LoggerFactory.getLogger(ElasticSearchLogHandler.class);
+
+	@Resource
+	private LogSummaryManager logSummaryManager;
+	@Resource
+	private InterfaceStatusMonitor interfaceStatusMonitor; 
+	
+	@Autowired
+	ApplicationEventHandler applicationEventHandler;
+	
+	@Override
+	public void process(Exchange exchange) throws Exception {
+		try {
+			BigDataDocument bigdataDoc = exchange.getIn().getBody(EsCommonDoc.class);
+
+			//큐에서 가져온 로그데이터를 bigdataDocumentList에 넣는다.
+			CamelHelper.getInstance().insert_bulk_bigdata_storage(bigdataDoc);
+			
+			//DB통계테이블(메모리 테이블)에 통계 데이터 저장 작업 호출
+			@SuppressWarnings("unchecked")
+			Map<String, Object> docMap = (Map<String, Object>) ((EsCommonDoc)bigdataDoc).getDoc();
+			//test를 위해 ES_KEY_INSTANCE(instance),ES_KEY_PROXY(proxy)추가
+			docMap.put("instance", "xconn-eai01");
+			docMap.put("proxy", "xconn-proxy02");
+			
+			logSummaryManager.interfaceLog_summary_process(docMap);
+			
+			//inferface log push
+			String res_data = docMap.get("res_data").toString();
+			String req_data = docMap.get("req_data").toString();
+			//json,xml pretty string
+			if(res_data.length() > 0) res_data = com.xconnect.eai.server.common.util.CommonUtils.strPretty(res_data);
+			if(req_data.length() > 0) req_data = com.xconnect.eai.server.common.util.CommonUtils.strPretty(req_data);
+
+			if(res_data.length() > SystemCommonConstants.STACK_TRACE_SUBSTR_LENGTH) {
+				res_data = res_data.substring(0, SystemCommonConstants.STACK_TRACE_SUBSTR_LENGTH) + "...";
+			}
+			
+			if( req_data.length() > SystemCommonConstants.STACK_TRACE_SUBSTR_LENGTH) {
+				req_data =  req_data.substring(0, SystemCommonConstants.STACK_TRACE_SUBSTR_LENGTH) + "...";
+			}
+			
+			Date date = (Date)docMap.get("start");
+			IfLogPushMessageVO ifLogPushmsg = new IfLogPushMessageVO();
+			ifLogPushmsg.setIf_id( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("interface"), "") );
+			ifLogPushmsg.setSender( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("sender"), "") );
+			ifLogPushmsg.setProxy( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("proxy"), "") );
+			ifLogPushmsg.setInstance( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("instance"), "") );
+			ifLogPushmsg.setFailed( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("failed"), "") );
+			ifLogPushmsg.setStatus( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("status"), "") );
+			ifLogPushmsg.setDatatime(date);
+			ifLogPushmsg.setDuration(Double.valueOf( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("duration"), "0") ).toString());
+			ifLogPushmsg.setReq_data(req_data);
+			ifLogPushmsg.setRes_data(res_data);
+			ifLogPushmsg.setReceiver( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("receiver"), "") );
+			ifLogPushmsg.setTracking_id( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("tracking_id"), "") );
+			ifLogPushmsg.setRoute_id( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("route_id"), "") );
+			ifLogPushmsg.setIf_ver_no( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("version"), "") );
+			ifLogPushmsg.setError( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("error"), "") );
+			
+			if( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("error"), "").startsWith(SystemCommonConstants.EAI_SERVER_ERROR_PREFIX)) {
+				ifLogPushmsg.setIsEaiError("Y");
+			}else {
+				ifLogPushmsg.setIsEaiError("N");
+			}
+
+			applicationEventHandler.sendMsg(ifLogPushmsg);
+			
+			//로그결과가 에러인 경우 인터페이스에러 노티메시지를 발생
+			if( com.xconnect.eai.server.common.util.CommonUtils.strNvl( docMap.get("status"), "").equalsIgnoreCase("E")) {
+				interfaceStatusMonitor.ifMsgErrorNoti(docMap);
+			}
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchLogHandler] >> process :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException("ElasticSearchLogHandler Process Exception" + XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+		
+	}
+	
+}
+
