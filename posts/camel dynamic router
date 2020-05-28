@@ -119,6 +119,128 @@
 		}
 	}
 	
+----------수정된 다이나믹 라우터------------
+public String resolve(Exchange exchange, @Properties Map<String, Object> properties) throws Exception {
+
+		// Dynamic Router 중복실행 체크
+		if(properties.get("DYNAMIC_ROUTER_INVOKED") != null) return null;
+		exchange.setProperty("DYNAMIC_ROUTER_INVOKED", 1);
+		//if(true) return "direct:IF_CN_CXP_HQ-EAI_0020_v001";
+
+		try {
+			exchange.setProperty("DYNAMIC_ROUTER_INVOKED", 1);
+			
+			LOG.debug("-------------------------- XConnector Dynamic Router -------------------------");
+			HttpServletRequest servletRequest = exchange.getIn().getHeader("CamelHttpServletRequest", HttpServletRequest.class);
+			LOG.debug("[CamelDynamicRouter] >> resolve ::  header = " + exchange.getIn().getHeaders());
+			LOG.debug("------------------------------------------------------------------------------");
+			
+			// Sample Message 요청에 대한 응답
+			if(exchange.getIn().getHeaders().get("sample") != null && exchange.getIn().getHeaders().get("sample").toString().equalsIgnoreCase("true")) {
+				return "direct:REQUEST_RESPONSE_SAMPLE_MSG";
+			}
+			
+			// HTTP Header 발라냄
+			Map<String, Object> httpHeaderMap = new HashMap<String, Object>();
+			Enumeration<String> httpHeaderNames = servletRequest.getHeaderNames();
+			while(httpHeaderNames.hasMoreElements()) {
+				String httpHeaderKey = httpHeaderNames.nextElement();
+				httpHeaderMap.put(httpHeaderKey, servletRequest.getHeader(httpHeaderKey));
+			}
+			
+			InterfaceRequestMessage message = exchange.getIn().getBody(InterfaceRequestMessage.class);
+			String if_id = message.getIfId();
+			String if_ver= message.getIfVer();
+			/////////////////////////////////////////////////////////////
+			// 0. Interface ID가 존재하지 않으므로 Error 처리
+			if(if_id.equals("")) {
+				String originalMsg = exchange.getProperty(SystemCommonConstants.CAMEL_PROPERTY_ORIGINAL_MSG, String.class);
+				CamelHelper.getInstance().txLog("", "message.text.001", originalMsg, httpHeaderMap);
+				//String logMsg = String.format("전문 Header에 인터페이스 아이디가 없습니다. 확인 바랍니다.\n#### Original Message =====>\n%s", originalMsg);
+				throw new XConnectEaiServerException("전문 Header에 인터페이스 아이디가 없습니다. 확인 바랍니다.", XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL);
+			}
+
+			/////////////////////////////////////////////////////////////
+			// 1. Auth 인증 체크 (Basic, Bearer)
+			AuthorizationInfoVO authVo = null;
+			Map<String, Object> clientInfoMap = null;
+			try {
+				authVo = CommonUtils.getAuthInfo(servletRequest);
+				clientInfoMap = ClientAuthChecker.checkAuthorization(authVo);
+				if( !clientInfoMap.get("SYSTEM_ID").toString().equalsIgnoreCase(message.getIfSender()) ) {
+					String originalMsg = exchange.getProperty(SystemCommonConstants.CAMEL_PROPERTY_ORIGINAL_MSG, String.class);
+					CamelHelper.getInstance().txLog("", "message.text.005", originalMsg, httpHeaderMap);
+					//String logMsg = String.format("요청하신 Sender System의 ID/PWD 가 일치하지 않습니다.\n#### Original Message =====>\n%s", originalMsg);
+					//CamelHelper.getInstance().txLog(logMsg);
+					throw new XConnectEaiServerException("요청하신 Sender System의 ID/PWD 가 일치하지 않습니다.", XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL);
+				}
+			} catch (XConnectEaiServerException e) {
+				String originalMsg = exchange.getProperty(SystemCommonConstants.CAMEL_PROPERTY_ORIGINAL_MSG, String.class);
+				CamelHelper.getInstance().txLog("" + e.getMessage(), "message.text.006", originalMsg, httpHeaderMap);
+				//String logMsg = String.format("인증체크중 오류가 발생하였습니다.\n오류 : %s\n#### Original Message =====>\n%s", e.getMessage(), originalMsg);
+				//CamelHelper.getInstance().txLog(logMsg);
+				throw e;
+			}
+			
+			/////////////////////////////////////////////////////////////
+			// 2. 파트너일때 실행불가 인터페이스 목록 체크
+			if(clientInfoMap.get("CLIENT_KIND").toString().equalsIgnoreCase("PARTNER")) {
+				try {
+					ClientAuthChecker.checkPartnerForbiddenIf(clientInfoMap.get("CLIENT_ID").toString(), if_id, if_ver);
+				} catch (XConnectEaiServerException e) {
+					String originalMsg = exchange.getProperty(SystemCommonConstants.CAMEL_PROPERTY_ORIGINAL_MSG, String.class);
+					CamelHelper.getInstance().txLog("", "message.text.007", originalMsg, httpHeaderMap);
+					//String logMsg = String.format("Partner의 실행불가 인터페이스를 요청하였습니다.\n#### Original Message =====>\n%s", originalMsg);
+					//CamelHelper.getInstance().txLog(logMsg);
+					throw e;
+				}
+			}
+
+			//////////////////////////////////////////////////////////////////
+			// FIXME TEST... 테스트 이후 삭제할것...
+			//if(!if_id.equals("")) return "direct:" + if_id + "_" + if_ver;
+			//////////////////////////////////////////////////////////////////
+
+			/////////////////////////////////////////////////////////////
+			// 3. 실행인터페이스 Table Map에서 인터페이스 상태를 체크한다.
+			ConcurrentHashMap<String, Map<String, Object>> runningInterfaceInfoMap = CamelHelper.getInstance().runningInterfaceInfoMap;
+			boolean __can_do_routing = false;
+			Map<String, Object> tb_dev_run_if_table_map = runningInterfaceInfoMap.get(if_id + "_" + if_ver);
+			if(tb_dev_run_if_table_map != null) {
+				String status = CommonUtils.strNvl(tb_dev_run_if_table_map.get("IF_STAT_CD"), "D");
+				if(status.equalsIgnoreCase("D")) __can_do_routing = false;			// Disabled
+				else if(status.equalsIgnoreCase("E")) __can_do_routing = true;		// Enabled
+			}
+			// 실행가능 인터페이스가 아니므로 에러처리
+			if(!__can_do_routing) {
+				String originalMsg = exchange.getProperty(SystemCommonConstants.CAMEL_PROPERTY_ORIGINAL_MSG, String.class);
+				CamelHelper.getInstance().txLog("", "message.text.008", originalMsg, httpHeaderMap);
+				//String logMsg = String.format("해당 인터페이스는 실행가능한 인터페이스가 아닙니다.\n#### Original Message =====>\n%s", originalMsg);
+				//CamelHelper.getInstance().txLog(logMsg);
+				throw new XConnectEaiServerException("해당 인터페이스는 실행가능한 인터페이스가 아닙니다.", XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL);
+			}
+			// GUI/TEXT Mode에 따라 body message를 셋팅
+			String devModeCd = CommonUtils.strNvl(tb_dev_run_if_table_map.get("DEV_MODE_TYPE_CD"), "GUI");
+			if(devModeCd.equalsIgnoreCase("TXT")) {
+				exchange.getIn().setBody(exchange.getProperty(SystemCommonConstants.CAMEL_PROPERTY_ORIGINAL_MSG, String.class));
+			}
+			
+			/////////////////////////////////////////////////////////////
+			// 4. 최종적으로 'direct:INTERFACEID_IFVER' 으로 라우팅 해준다.
+			return "direct:" + if_id + "_" + if_ver;
+
+		} catch (Exception e) {
+			/////////////////////////////////////////////////////////////
+			// 5. 오류가 발생하면 'direct:DYNAMIC_ROUTING_ERROR_HANDLER' 라우터로 보낸다.
+			LOG.error("[CamelDynamicRouter] >> route :: Error > " + CommonUtils.getPrintStackTrace(e));
+			//CamelHelper.getInstance().txLog("Dynamic Router에서 오류가 발생하여 요청 인터페이스를 호출 할 수 없습니다.\n");
+			if(e instanceof XConnectEaiServerException) exchange.setProperty(Exchange.EXCEPTION_CAUGHT, e);
+			else exchange.setProperty(Exchange.EXCEPTION_CAUGHT, new XConnectEaiServerException("해당 인터페이스를 라우팅 할 수 없습니다. " + e.getMessage(), XConnectEaiServerException.DYNAMIC_ROUTE_RESOLVE_FAIL) );
+
+			return "direct:DYNAMIC_ROUTING_ERROR_HANDLER";
+		}
+	}
+	
 3. 다이나믹 라우터에서 라우팅 해준 라우터로 가서 실행
 // TEST ...
 			from("direct:IF_CN_CXP_HQ-EAI_0020_v001")
