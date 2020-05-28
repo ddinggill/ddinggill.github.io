@@ -40,3 +40,385 @@ for(String beanname : beanDefinitionRegistry.getBeanDefinitionNames()) {
 	System.out.println("bean name: " + beanname);
 
 }
+
+
+-SpringBeanManager
+
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.service.register;
+
+import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.Route;
+import org.apache.camel.ServiceStatus;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.ObjectUtils;
+
+import com.google.common.collect.Lists;
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.dao.service.component.CamelComponentDAO;
+import com.xconnect.eai.server.common.dao.service.register.RegisterDAO;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.common.util.AliasReplaceUtils;
+import com.xconnect.eai.server.common.util.CamelHelper;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.service.register.handler.vo.CamelRouterRegisterVO.COMMAND;
+
+import io.jsonwebtoken.lang.Collections;
+
+/**
+ * <pre>
+ * com.eai.server.camel.core.register.bean 
+ *    |_ SpringBeanManager.java
+ * 
+ * </pre>
+ * 
+ * @date : 2019. 10. 31. 오후 2:07:08
+ * @version :
+ * @author : A931744
+ */
+@Component
+public class SpringBeanManager {
+
+	private static final Logger LOG = LoggerFactory.getLogger(SpringBeanManager.class);
+
+	private static String ADAPTER_TYPE_HTTP_SERVER = "HTTP-SERVER";
+	private static String ADAPTER_TYPE_SOAP_SERVER = "SOAP-SERVER";
+	private static String ADAPTER_TYPE_REST_SERVER = "REST-SERVER";
+	
+	private static RegisterDAO registerDAO;
+	
+	@Autowired
+	public SpringBeanManager(RegisterDAO registerDAO) {
+		SpringBeanManager.registerDAO = registerDAO;
+	}
+
+	public static List<Map<String, Object>> SpringBeanRegister(String bean_xml, String strDescription) throws XConnectEaiServerException {
+		try {
+			LOG.debug(String.format("[SpringBeanManager] >> SpringBeanRegister [%s] ", strDescription));
+
+			ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+
+			// Spring Bean 등록
+			List<Map<String, Object>> beansMapList = Lists.newArrayList();
+			if (!bean_xml.trim().equalsIgnoreCase("")) {
+				////////////////////////////////////////////////
+				// I. Alias 치환
+				bean_xml = new AliasReplaceUtils().replace(bean_xml);
+
+				////////////////////////////////////////////////
+				// II. Spring Beans 등록
+				ByteArrayResource resource = new ByteArrayResource(bean_xml.getBytes("UTF-8"), strDescription);
+				BeanDefinitionRegistry beanDefinitionRegistry = (BeanDefinitionRegistry) ctx
+						.getAutowireCapableBeanFactory();
+				XmlBeanDefinitionReader reader = new XmlBeanDefinitionReader(beanDefinitionRegistry);
+				reader.loadBeanDefinitions(resource);
+				List<String> beannames = getIdsFromXml(bean_xml, true);
+				for(String beanname : beannames) {
+					Map<String, Object> beansMap = new LinkedHashMap<String, Object>();
+					beansMap.put("bean_name", beanname);
+					beansMap.put("command", "REGISTER");
+					beansMap.put("status", "success");
+					beansMapList.add(beansMap);
+				}
+				// 등록된 Bean Count 체크 필요?
+			}
+			return beansMapList;
+		} catch (Exception e) {
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.SPRING_BEAN_REGIST_FAILED);
+		}
+	}
+
+	public static List<Map<String, Object>> SpringBeanDelete(String beanXml, String description) throws XConnectEaiServerException {
+
+		LOG.debug("[SpringBeanManager] >> SpringBeanDelete [{}] ", description);
+		List<String> beanNames = getIdsFromXml(beanXml, true);
+
+		try {
+			// Spring Bean 삭제
+			List<Map<String, Object>> beansMapList = Lists.newArrayList();
+			if (!CollectionUtils.isEmpty(beanNames)) {
+				ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+				BeanDefinitionRegistry beanDefinitionRegistry = (BeanDefinitionRegistry) ctx
+						.getAutowireCapableBeanFactory();
+
+				for (String beanName : beanNames) {
+					Map<String, Object> beansMap = new LinkedHashMap<String, Object>();
+					try {
+						beanDefinitionRegistry.removeBeanDefinition(beanName);
+					} catch (NoSuchBeanDefinitionException e) {
+						// do nothing...
+						LOG.warn(e.getMessage());
+					}
+					beansMap.put("bean_name", beanName);
+					beansMap.put("command", "DELETE");
+					beansMap.put("status", "success");
+					beansMapList.add(beansMap);
+				}
+			}
+			return beansMapList;
+		} catch (Exception e) {
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.SPRING_BEAN_DELETE_FAILED);
+		}
+	}
+	
+	public static Map<String, Object> SpringBeanRegister(String adapterType, String beanXml, String description)
+			throws XConnectEaiServerException {
+		/*-------------------------------------------------------------------------------------------------------
+		 * 아답터유형에 따라 SpringContext, CamelContext로 구분하여 아답터를 등록
+		 *------------------------------------------------------------------------------------------------------*/
+		LOG.debug("[SpringBeanManager] >> SpringBeanRegister -- adapterType:{}, description:{}, beanXml:{}",
+				adapterType, beanXml, description);
+		Map<String, Object> resultMap = new LinkedHashMap<String, Object>();
+		if (ADAPTER_TYPE_HTTP_SERVER.equalsIgnoreCase(adapterType)
+				|| ADAPTER_TYPE_SOAP_SERVER.equalsIgnoreCase(adapterType)
+				|| ADAPTER_TYPE_REST_SERVER.equalsIgnoreCase(adapterType)) {
+			resultMap.put("camel_context", registerAdapterToCamelRouter(beanXml, description));		
+			
+		} else {
+			// Spring Context에 Bean 등록   
+			resultMap.put("spring_context", SpringBeanRegister(beanXml, description));
+		}
+		return resultMap;
+	}
+
+	public static Map<String, Object> SpringBeanDelete(String adapterType, String beanXml, String description)
+			throws XConnectEaiServerException {
+		/*-------------------------------------------------------------------------------------------------------
+		 * 삭제된 Bean을 참조하는 다른 Bean을 조회하여 삭제. >>> 어디에서 조회할 수 있는가? >>> 대상외로 정리함.
+		 *------------------------------------------------------------------------------------------------------*/
+		/*-------------------------------------------------------------------------------------------------------
+		 * 아답터유형에 따라 SpringContext, CamelContext로 구분하여 아답터를 삭제
+		 * - 해당 아답터를 사용중인 실행인터페이스(Camel Router)를 중지
+		 *------------------------------------------------------------------------------------------------------*/
+		LOG.debug("[SpringBeanManager] >> SpringBeanDelete -- adapterType:{}, description:{}, beanXml:{}"
+				, adapterType, beanXml, description);
+		List<String> deletedBeanNames = Lists.newArrayList();
+		Map<String, Object> resultMap = new LinkedHashMap<String, Object>();
+		if (ADAPTER_TYPE_HTTP_SERVER.equalsIgnoreCase(adapterType)
+				|| ADAPTER_TYPE_SOAP_SERVER.equalsIgnoreCase(adapterType)
+				|| ADAPTER_TYPE_REST_SERVER.equalsIgnoreCase(adapterType)) {
+			List<Map<String, Object>> mapList = deleteAdapterFromCamelRouter(beanXml, description);
+			for(Map<String, Object> map : mapList) {
+				if("success".equalsIgnoreCase(MapUtils.getString(map, "status"))) {
+					deletedBeanNames.add(MapUtils.getString(map, "route_id"));
+				}
+			}
+			resultMap.put("camel_context", mapList);
+		} else {
+			// Bean 삭제
+			List<Map<String, Object>> mapList = SpringBeanDelete(beanXml, description);
+			for(Map<String, Object> map : mapList) {
+				if("success".equalsIgnoreCase(MapUtils.getString(map, "status"))) {
+					deletedBeanNames.add(MapUtils.getString(map, "bean_name"));
+				}
+			}
+			resultMap.put("spring_context", mapList);
+		}
+		// 삭제된 Bean을 참조하는 Enable 상태의 실행인터페이스(CamelRouter)를 중지
+		resultMap.put("stop_interface_ids", stopRunningInterface(deletedBeanNames));
+		return resultMap;
+	}
+
+	public static Map<String, Object> SpringBeanModify(String adapterType, String beanXml, String description)
+			throws XConnectEaiServerException {
+
+		LOG.debug("[SpringBeanManager] >> SpringBeanModify -- adapterType:{}, description:{}, beanXml:{}", adapterType,
+				beanXml, description);
+		Map<String, Object> resultMap = new LinkedHashMap<String, Object>();
+		// 1. 수정하려는 아답터가 SpringContext, CamelContext에 존재하면 삭제
+		// 2.삭제된 Bean을 참조하는 Enable 상태의 실행인터페이스(CamelRouter)를 중지
+		Map<String, Object> delResp = SpringBeanDelete(adapterType, beanXml, description);
+		resultMap.put("process_delete", delResp);
+		
+		// 3.수정하려는 아답터를 아답터유형에 따라 SpringContext, CamelContext에 등록
+		Map<String, Object> regResp = SpringBeanRegister(adapterType, beanXml, description);
+		// 4.중지하였던 실행인터페이스(CamelRouter)를 실행(시작)
+		@SuppressWarnings("unchecked")
+		List<String> stopInterfaceIds = (List<String>) MapUtils.getObject(delResp, "stop_interface_ids");
+		regResp.put("start_interface_ids", executeCommandCamelRouter(stopInterfaceIds, COMMAND.START.getCommandString()));
+		resultMap.put("process_register", regResp);
+		return resultMap;
+	}	
+	
+	public static Map<String, Object> ContextRead(String bean_xml) throws XConnectEaiServerException {
+
+		ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+
+		List<String> beanNames = null;
+		if (StringUtils.isEmpty(bean_xml)) {
+			beanNames = Arrays.asList(ctx.getBeanDefinitionNames());
+		} else {
+			beanNames = getIdsFromXml(bean_xml, true);
+		}
+
+		Map<String, Object> beansMap = null;
+		List<Map<String, Object>> beansMapList = Lists.newArrayList();
+		for (String name : beanNames) {
+			beansMap = new LinkedHashMap<String, Object>();
+			beansMap.put("bean_name", name);
+			beansMap.put("command", "READ");
+			try {
+				ctx.getBean(name);
+				beansMap.put("status", "ENABLED");
+			} catch (NoSuchBeanDefinitionException e) {
+				LOG.warn("[SpringBeanManager] >> getBeanNameAndInstanceInfo :: Error > {}", CommonUtils.getPrintStackTrace(e));
+				beansMap.put("status", "UNREGISTERED");
+			} catch (BeansException e) {
+				LOG.warn("[SpringBeanManager] >> getBeanNameAndInstanceInfo :: Error > {}", CommonUtils.getPrintStackTrace(e));
+				beansMap.put("status", "DISABLED");
+			}
+			beansMapList.add(beansMap);
+		}
+		
+		CamelContext camel_ctx = (CamelContext) ctx.getBean(SystemCommonConstants.CAMEL_CONTEXT_ID);
+		Map<String, Object> routeMap = null;
+		List<Map<String, Object>> routesMapList = Lists.newArrayList();
+		if (StringUtils.isEmpty(bean_xml)) {
+			List<Route> routes = camel_ctx.getRoutes();
+			for(Route route : routes) {
+				ServiceStatus status = camel_ctx.getRouteStatus(route.getId());
+				routeMap = new LinkedHashMap<String, Object>();
+				routeMap.put("route_id", route.getId());
+				String msg = status.isStarted() 
+						? "STARTED": (status.isStopped() 
+								? "STOPPED" : (status.isSuspended() ? "SUSPENDED" : "UNKNOWN"));
+				routeMap.put("command", "READ");
+				routeMap.put("status", msg);
+				routesMapList.add(routeMap);
+			}
+		} else {
+			beanNames.clear();
+			beanNames = getIdsFromXml(bean_xml, false);
+			for(String name : beanNames) {
+				Route route = camel_ctx.getRoute(name);
+				routeMap = new LinkedHashMap<String, Object>();
+				routeMap.put("route_id", name);				
+				if(!ObjectUtils.isEmpty(route)) {
+					ServiceStatus status = camel_ctx.getRouteStatus(route.getId());
+					String msg = status.isStarted() 
+							? "STARTED" : (status.isStopped() 
+									? "STOPPED" : (status.isSuspended() ? "SUSPENDED" : "UNKNOWN"));
+					routeMap.put("command", "READ");
+					routeMap.put("status", msg);
+				} else {
+					routeMap.put("command", "READ");
+					routeMap.put("status", "N/A");
+					routeMap.put("reason", "UNREGISTERED");					
+				}
+				routesMapList.add(routeMap);
+			}
+		}
+		Map<String, Object> resultMap = new LinkedHashMap<String, Object>();
+		resultMap.put("spring_context", beansMapList);
+		resultMap.put("camel_context", routesMapList);
+		return resultMap;
+	}	
+	
+	private static List<Map<String, Object>> registerAdapterToCamelRouter(String xmlSrc, String description) 
+			throws XConnectEaiServerException {
+		List<String> trgIds = getIdsFromXml(xmlSrc, false);
+		return CamelRouterManager.CamelRouterRegister(xmlSrc
+				, StringUtils.join("ADAPTER-",trgIds.stream().findFirst().get())
+				, StringUtils.join("ADAPTER-",description));
+	}
+	
+	private static List<Map<String, Object>> deleteAdapterFromCamelRouter(String xmlSrc, String description) 
+			throws XConnectEaiServerException {
+		List<String> trgIds = getIdsFromXml(xmlSrc, false);
+		List<Map<String, Object>> routesMapList = Lists.newArrayList();
+		for (String trgId : trgIds) {
+			try {
+				routesMapList.add(CamelRouterManager.CamelRouterDelete(trgId));
+			} catch (XConnectEaiServerException e) {
+				throw e;
+			}			
+		}
+		return routesMapList;
+	}
+
+	private static List<String> getIdsFromXml(String xmlSrc, boolean isBean) throws XConnectEaiServerException {
+		try {
+			return CommonUtils.findIdInXml(xmlSrc, isBean);
+		} catch (Exception e) {
+			// TODO :ErrorCode - FIND_ID_IN_XML_FAILED
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+
+	private static List<String> stopRunningInterface(List<String> beanNames) throws XConnectEaiServerException {
+		/*-------------------------------------------------------------------------------------------------------
+		 * 삭제된 Bean을 참조하는 Enable 상태의 실행인터페이스(CamelRouter)를 조회 
+		 * >>> 삭제된 Bean을 참조하는지는 어떤 컬럼에 조건을 주어야 하는가? 
+		 * >>> "XML_SOURCE" 컬럼 값에 beanNames가 존재하는 것
+		 *-------------------------------------------------------------------------------------------------------*/
+		/*-------------------------------------------------------------------------------------------------------
+		 * Disable 상태로 변경하려는 실행인터페이스(CamelRouter)를 참조하는 다른 실행인터페이(CamelRouter)는 
+		 * 있을 수 있는가? 존재한다면 다른 실행인터페이스(CamelRouter)도 Disable 상태로 변경하는가? 
+		 * --->>> 대상외로 정리
+		 *-------------------------------------------------------------------------------------------------------*/
+		if(Collections.isEmpty(beanNames)) { 
+			return Lists.newArrayList();
+		}
+		List<Map<String, Object>> trgIfs = null;
+		try {
+			trgIfs = registerDAO.selectRunningInterfaceInfo(beanNames);
+		} catch (SQLException e) {
+			throw new XConnectEaiServerException(e.getMessage());
+		}
+		List<String> stopRouterIds = Lists.newArrayList();
+		for (Map<String, Object> trgIf : trgIfs) {
+			String xmlSrc = MapUtils.getString(trgIf, "XML_SRC");
+			LOG.debug("== ROUTER XML SRC ==>{}", xmlSrc);
+			List<String> trgRouteIds = getIdsFromXml(xmlSrc, false);
+			// Camel Router - execute command
+			List<Map<String, Object>> routerMapList = executeCommandCamelRouter(trgRouteIds, COMMAND.STOP.getCommandString());
+			for(Map<String, Object> routeMap : routerMapList) {
+				if("success".equalsIgnoreCase(MapUtils.getString(routeMap, "status"))) {
+					stopRouterIds.add(MapUtils.getString(routeMap, "route_id"));
+				}
+			}
+		}
+		return stopRouterIds;
+	}
+
+	private static List<Map<String, Object>> executeCommandCamelRouter(List<String> routerIds, String command)
+			throws XConnectEaiServerException {
+		List<Map<String, Object>> routeList = Lists.newArrayList();
+		for (String routeId : routerIds) {
+			// Camel Router Command 처리
+			// 실행인터페이스의 인터페이스상태코드(Enable/Disable)의 UPDATE는 호출하는 곳에서 한다.
+			try {
+				Map<String, Object> rstMap = CamelRouterManager.CamelRouterCommand(routeId, command);
+				routeList.add(rstMap);
+			} catch (XConnectEaiServerException e) {
+				throw e;
+			}				
+		}
+		return routeList;
+	}
+}
