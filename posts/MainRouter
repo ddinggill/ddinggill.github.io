@@ -1,0 +1,317 @@
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.service; 
+
+import java.lang.management.ManagementFactory;
+import java.net.Inet4Address;
+
+import javax.annotation.Resource;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.apache.camel.ProducerTemplate;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.support.LifecycleStrategySupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+
+import com.sun.management.OperatingSystemMXBean;
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.dao.service.component.CamelComponentDAO;
+import com.xconnect.eai.server.common.elasticsearch.ElasticSearchLogHandler;
+import com.xconnect.eai.server.common.elasticsearch.ElasticSearchLogInsertHandler;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.common.session.UserSessionManager;
+import com.xconnect.eai.server.common.util.CamelHelper;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.common.util.LogSummaryScheduleHandler;
+import com.xconnect.eai.server.common.util.RefreshuserSessionInfo;
+import com.xconnect.eai.server.common.util.ServerResourceHandler;
+import com.xconnect.eai.server.common.util.ServerResourceHourHandler;
+import com.xconnect.eai.server.common.vo.InterfaceMessage;
+import com.xconnect.eai.server.common.vo.InterfaceRequestMessage;
+import com.xconnect.eai.server.common.vo.InterfaceResponseMessage;
+import com.xconnect.eai.server.service.monitoring.AdapterHealthChecker;
+import com.xconnect.eai.server.service.monitoring.SystemInfoServiceImpl;
+import com.xconnect.eai.server.service.monitoring.handshake.HandShakingServiceImpl;
+import com.xconnect.eai.server.service.processor.AdapterStatusProcessor;
+import com.xconnect.eai.server.service.processor.CamelDynamicRouter;
+import com.xconnect.eai.server.service.processor.StandardInterfaceMessageParser;
+import com.xconnect.eai.server.service.processor.system.AccessTokenIssueProcessor;
+import com.xconnect.eai.server.service.processor.system.ExceptionProcessor;
+import com.xconnect.eai.server.service.processor.system.HandshakeProcessor;
+import com.xconnect.eai.server.service.processor.system.MetaInfoLoadingProcessor;
+import com.xconnect.eai.server.service.processor.system.ReqResSampleMsgQuery;
+import com.xconnect.eai.server.service.processor.system.ServerResourceStatusProcessor;
+import com.xconnect.eai.server.service.processor.system.SystemInitializeProcessor;
+import com.xconnect.eai.server.service.processor.system.impl.ScheduleJobMonitoringProcessor;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.service 
+ *    |_ XConnectServerRouter.java
+ * 
+ * </pre>
+ * @date : 2019. 11. 18. 오후 5:59:34
+ * @version : 
+ * @author : A931744
+ */
+@SuppressWarnings("restriction")
+public class XConnectServerRouter extends RouteBuilder {
+
+	private static final Logger LOG = LoggerFactory.getLogger(XConnectServerRouter.class);
+
+	@Value("${rmi.port: 38088}")
+	private int rmiPort;
+	
+	@Value("${xconnect.eai.server.master: false}")
+	private boolean isMaster;
+	@Value("${SERVER_ID: SVR0000001}")
+	private String serverId;
+	@Value("${xconnect.eai.server.bulkinsert.period: 1000}")
+	private int bulkInsertPeriod;
+	
+	@Resource
+	private SystemInitializeProcessor systemInitializeProcessor;
+	@Resource
+	private ExceptionProcessor exceptionProcessor;
+	@Resource
+	private HandshakeProcessor handshakeProcessor;
+	@Resource
+	private ServerResourceHandler serverResourceHandler;
+	@Resource
+	private ServerResourceHourHandler serverResourceHourHandler;
+	@Resource
+	private AdapterHealthChecker adapterHealthChecker;
+	@Resource
+	private UserSessionManager userSessionManager;
+	@Resource
+	private ElasticSearchLogHandler elasticSearchLogHandler;
+	@Resource
+	private ElasticSearchLogInsertHandler elasticSearchLogInsertHandler;
+	@Resource
+	private LogSummaryScheduleHandler logSummaryScheduleHandler;
+	@Resource
+	private MetaInfoLoadingProcessor metaInfoLoadingProcessor;
+	@Resource
+	private CamelComponentDAO camelComponentDAO;
+	@Resource
+	private ServerResourceStatusProcessor serverResourceStatusProcessor;	
+	@Resource
+	private ScheduleJobMonitoringProcessor scheduleJobMonitoringProcessor;	
+	@Resource
+	private AdapterStatusProcessor adapterStatusProcessor;
+	@Resource
+	private RefreshuserSessionInfo refreshuserSessionInfo;
+	@Resource
+	private AccessTokenIssueProcessor accessTokenIssueProcessor;
+	@Resource
+	private ReqResSampleMsgQuery reqResSampleMsgQuery;
+	
+	@Override
+	public void configure() throws Exception {
+		LOG.debug("==========================================================================");
+		LOG.debug("[XConnectServerRouter] >> configure :: XConnector EAI Server Router Start!");
+		LOG.debug("==========================================================================");
+		
+		try {
+			ProducerTemplate producerTemplate = getContext().createProducerTemplate();
+			CamelHelper.getInstance().setProducerTemplate(producerTemplate);
+			CamelHelper.getInstance().setMaster(isMaster);
+			CamelHelper.getInstance().setServerId(serverId);
+			CamelHelper.getInstance().setCamelComponentDAO(camelComponentDAO);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0. 일반 Exception을 처리하는 router
+			onException(Exception.class).handled(true)//.continued(false)
+			.process(exceptionProcessor);
+			onException(XConnectEaiServerException.class).handled(true)//.continued(false)
+			.process(exceptionProcessor);
+
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.0 Dynamic Routing Error Handler
+			from("direct:DYNAMIC_ROUTING_ERROR_HANDLER")
+			.process(new Processor() {
+				@Override
+				public void process(Exchange exchange) throws Exception {
+					XConnectEaiServerException cause = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, XConnectEaiServerException.class);
+					InterfaceResponseMessage response_message = new InterfaceResponseMessage(exchange.getIn().getBody(InterfaceMessage.class));
+					response_message.setIfResult("E");
+					response_message.setIfFailMsg(SystemCommonConstants.EAI_SERVER_ERROR_PREFIX + " - " + cause.getMessage());
+					String response_msg_string = exchange.getProperty(SystemCommonConstants.REQUEST_DATA_TYPE, String.class) != null ?
+							exchange.getProperty(SystemCommonConstants.REQUEST_DATA_TYPE, String.class).equalsIgnoreCase("xml") ?
+									response_message.getXmlResponseMessage() : response_message.getJsonResponseMessage() : response_message.getJsonResponseMessage();
+					exchange.getOut().setBody( response_msg_string );		
+				}
+			});
+
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.1 시스템 부팅시 초기 Initialize 작업 수행 (어댑터 등록, 인터페이스 라우터 등록, 스케줄 실행 등)
+			from("timer://XCONNECT_EAI_SERVER_INITIALIZE?repeatCount=1&delay=1000").routeId("XCONNECT_EAI_SERVER_INITIALIZE_ROUTER")
+			.process(systemInitializeProcessor)
+			;
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.2 2분에 한번씩 각 서버와 Handshaking을 하여 Master Node를 선출한다.
+			from("timer://XCONNECT_EAI_SERVER_HANDSHAKING?period=120000&delay=1000").routeId("XCONNECT_EAI_SERVER_HANDSHAKING_ROUTER")
+			.process(handshakeProcessor)
+			;
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.3 1초에 한번씩 CPU Load %를 구해 Load Average를 구한다.
+			final OperatingSystemMXBean osMBean = (com.sun.management.OperatingSystemMXBean)ManagementFactory.getOperatingSystemMXBean();
+			from("timer://XCONNECT_EAI_SERVER_CPU_USAGE?period=1000&delay=1000").routeId("XCONNECT_EAI_SERVER_CPU_USAGE_ROUTER")
+			.process(new Processor() {
+				@Override
+				public void process(Exchange exchange) throws Exception {
+					double cpu_load = osMBean.getSystemCpuLoad() * 100;
+					if(cpu_load < 0) return;
+					CamelHelper.getInstance().addCpuLoad(cpu_load);
+				}
+			});
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.4 1분에 한번씩 서버 리소스를 구해 DB에 저장한다.
+			from("timer://XCONNECT_EAI_SERVER_RESOURCE_MIN_JOB?period=60000&delay=3000").routeId("XCONNECT_EAI_SERVER_RESOURCE_HANDLER_ROUTER")
+			.process(serverResourceHandler);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.5 1시간에 한번씩 서버 리소스 평균을 구해 DB에 저장하고 24시가 지나면 하루치 통계 및 disk상세현황 저장
+			from("timer://XCONNECT_EAI_SERVER_RESOURCE_HOUR_JOB?period=3600000&delay=3000").routeId("XCONNECT_EAI_SERVER_RESOURCE_HOUR_HANDLER_ROUTER")
+			.process(serverResourceHourHandler);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.6 1분에 한번 Adapter 상태 업데이트 스케줄
+			from("timer://XCONNECT_EAI_SERVER_ADAPTER_STATUS_JOB?period=60000&delay=3000").routeId("XCONNECT_EAI_SERVER_ADAPTER_STATUS_ROUTER")
+			.process(adapterHealthChecker);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.7 1분에 한번 Session Timeout 스케줄
+			from("timer://XCONNECT_EAI_SERVER_SESSION_TIMEOUT_JOB?period=60000&delay=3000").routeId("XCONNECT_EAI_SERVER_SESSION_TIMEOUT_ROUTER")
+			.process(userSessionManager);
+
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.8 2초에 한번  인터페이스 통계내용을 메모리 테이블에서 DISK테이블로 저장 스케줄
+			from("timer://XCONNECT_EAI_SERVER_LOGSUMMARY_SCHEDULE_JOB?period=2000&delay=3000").routeId("XCONNECT_EAI_SERVER_LOGSUMMARY_SCHEDULE_HANDLER_ROUTER")
+			.process(logSummaryScheduleHandler);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 0.9 1분에 한번  SessinInfoListUpdate 스케줄
+			from("timer://XCONNECT_EAI_SERVER_SESSIONINFOLIST_UPDATE_MIN_JOB?period=60000&delay=3000").routeId("XCONNECT_EAI_SERVER_SESSIONINFOLIST_UPDATE_ROUTER")
+			.process(refreshuserSessionInfo);
+
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 1. 서버 리소스 정보 반환하는 RMI router / HandShaking RMI router
+			String myIpAddress = Inet4Address.getLocalHost().getHostAddress(); //myIpAddress = "127.0.0.1";
+			from("rmi://" + myIpAddress + ":" + rmiPort + "/" + SystemCommonConstants.RMI_REGISTRY_NAME_SVR_RESOURCE + "?remoteInterfaces=com.xconnect.eai.server.service.monitoring.SystemInfoService")
+			.bean(SystemInfoServiceImpl.class)
+			;
+			from("rmi://" + myIpAddress + ":" + rmiPort + "/" + SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING + "?remoteInterfaces=com.xconnect.eai.server.service.monitoring.handshake.HandShakingService")
+			.bean(HandShakingServiceImpl.class)
+			;
+			
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 2. 1초에 한번씩 체크하여 IF_LOG 큐에 들어온 로그데이터를 ES에 넣는다. (Max 1000건)
+			//final int __chunk_size = SystemCommonConstants.ES_IF_LOG_BULK_INSERT_CHUNK_SIZE;
+			from("timer://IF_LOG_QUEUE_CHECKER_SCHEDULE?period="+ bulkInsertPeriod + "&delay=1000")
+			.process(elasticSearchLogInsertHandler);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 3. 20초에 한번씩 기준정보 테이블에서 데이터를 가져와 Memory Map으로 가져온다.
+			from("timer://XCONNECT_EAI_SERVER_META_INFO_LOADING?period=120000&delay=100").routeId("XCONNECT_EAI_SERVER_META_INFO_LOADING_ROUTER")
+			.process(metaInfoLoadingProcessor)
+			;
+
+			///////////////////////////////////////////////////////////////////////////////////
+			// 4. 30초에 한번씩 서버 리소스를 구해 PUSH한다.
+			//from("quartz2://XCONNECT_EAI_SERVER_RESOURCE_JOB/XCONNECT_EAI_SERVER_RESOURCE_STATUS_PUSH_JOB?cron=0+0/1+*+*+*+?&startDelayedSeconds=3").routeId("XCONNECT_EAI_SERVER_RESOURCE_STATUS_PUSH_ROUTER")
+			from("timer://XCONNECT_EAI_SERVER_RESOURCE_STATUS_PUSH?period=30000&delay=1000").routeId("XCONNECT_EAI_SERVER_RESOURCE_STATUS_PUSH_ROUTER")
+			.process(serverResourceStatusProcessor);
+
+			///////////////////////////////////////////////////////////////////////////////////
+			// 5. 10분에 한번씩 Schedule History 테이블을 조회하여 비정상 실행 스케줄을 체크하여 Backup 서버가 실행토록 한다.
+			from("timer://XCONNECT_SCHEDULE_MONITORING_TIMER?period=600000&delay=60000").routeId("XCONNECT_SCHEDULE_MONITORING_ROUTER")
+			.process(scheduleJobMonitoringProcessor);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 6. 60초에 한번씩 아답타상태를 구해 PUSH한다.
+			from("timer://XCONNECT_ADAPTER_STATUS_PUSH?period=60000&delay=1000").routeId("XCONNECT_ADAPTER_STATUS_PUSH_ROUTER")
+			.process(adapterStatusProcessor);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 7. Access Token 발급
+			from("jetty://http://0.0.0.0:7073/services/tokenissue")
+			.process(accessTokenIssueProcessor);
+			
+			///////////////////////////////////////////////////////////////////////////////////
+			// 8. Request & Response Message Sample Return (Client의 요청/응답메시지 샘플 조회요청 처리)
+			from("direct:REQUEST_RESPONSE_SAMPLE_MSG")
+			.process(reqResSampleMsgQuery);
+
+			///////////////////////////////////////////////////////////////////////////////////
+			// 4. Dynamic Router (Sample)
+			/*
+			 * Spring DSL sample
+			 * <bean id="dynamicRouterResolver" class="com.xconnect.eai.server.service.processor.CamelDynamicRouter"/>
+			 * <camel:route>
+			 * 		<camel:from uri="jetty://http://0.0.0.0:38089/REST"/>
+			 * 		<camel:dynamicRouter>
+			 * 			<method ref="dynamicRouterResolver" method="resolve"/>
+			 * 		</camel:dynamicRouter>
+			 * </camel:route>
+			 */
+			from("jetty://http://0.0.0.0:7071/REST")
+				.process(new Processor() {
+					@Override
+					public void process(Exchange exchange) throws Exception {
+						exchange.getIn().setBody(exchange.getIn().getBody(String.class).trim());
+					}
+				})
+				.choice()
+					.when(body().startsWith("<"))
+						.setProperty(SystemCommonConstants.REQUEST_DATA_TYPE).simple("xml")
+						.bean(StandardInterfaceMessageParser.class, "xmlparser")
+					.when(body().startsWith("{"))
+						.setProperty(SystemCommonConstants.REQUEST_DATA_TYPE).simple("json")
+						.bean(StandardInterfaceMessageParser.class, "jsonparser")
+					.otherwise()
+						.setBody().simple("[X-Connector]-잘못된 데이터 형식입니다. XML or JSON만 가능합니다.")
+						.stop()
+				.end()
+				.to("xconnect-log:request?command=start")
+				.dynamicRouter(method(CamelDynamicRouter.class, "resolve"));
+			
+			//////////////////////////////////////////////////////////////////////////////
+			////////////////elasticSearchLogHandler//////////////////
+			from(SystemCommonConstants.EAI_SERVER_BROKER_NAME + ":queue:" + SystemCommonConstants.IF_LOG_QUEUE_NANE)
+			.routeId(SystemCommonConstants.CAMEL_LOG_LISTENER_ROUTE_ID)
+			.process(elasticSearchLogHandler);
+			
+			
+			///////////////////////////////////////////////////////////////////////////////
+			// Close Lifecycle Impl
+			getContext().addLifecycleStrategy(new LifecycleStrategySupport() {
+				@Override
+				public void onContextStop(CamelContext context) {
+					LOG.info("================================================================");
+					LOG.info("[XConnectServerRouter] >> XConnectServerRouter is Stop!");
+					LOG.info("================================================================");
+					// close jobs...
+				}
+			});
+
+		} catch (Exception e) {
+			LOG.error("[XConnectServerRouter] >> configure :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+}
