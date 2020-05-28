@@ -406,3 +406,201 @@ public class FileHandlerVO implements Serializable {
 	}
 	
 }
+
+-HazelCastExcutorForRegister
+
+/*
+ * Copyright Hyundai Auto Ever.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai Auto Ever. ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.service.register; 
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.util.ObjectUtils;
+
+import com.google.common.collect.Lists;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.IExecutorService;
+import com.hazelcast.core.Member;
+import com.xconnect.eai.server.common.hazelcast.HazelCastManager;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.service.register.handler.CamelRouterClusterHandler;
+import com.xconnect.eai.server.service.register.handler.SpringBeanClusterHandler;
+import com.xconnect.eai.server.service.register.handler.vo.CamelRouterRegisterVO;
+import com.xconnect.eai.server.service.register.handler.vo.SpringBeanRegisterVO;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.service.register 
+ *    |_ HazelCastExcutorForRegister.java
+ * 
+ * </pre>
+ * @date : 2020. 1. 29. 오후 5:31:45
+ * @version : 
+ * @author : A931878
+ */
+@Component
+public class HazelCastExcutorForRegister { 
+
+	private static final Logger LOG = LoggerFactory.getLogger(HazelCastExcutorForRegister.class);
+	
+	@Autowired
+	private HazelCastManager hazelCastManager; 
+	
+	public List<Map<String, Object>> deployAdapterToClusterdAllMembers(SpringBeanRegisterVO.COMMAND command
+			, String beanType, String beanXml, String beanId, String description) {
+		
+		HazelcastInstance instance = hazelCastManager.getInstance();
+		IExecutorService executor = instance.getExecutorService("HzSprinbBeanCluserService");
+		
+		SpringBeanRegisterVO vo = new SpringBeanRegisterVO();
+		vo.setBean_type(beanType);
+		vo.setCommand(command);
+		vo.setBean_xml(beanXml);
+		vo.setBean_id(beanId);
+		vo.setBean_definition(description);
+		
+		Map<Member, Future<SpringBeanRegisterVO>> resultMap = executor.submitToAllMembers(new SpringBeanClusterHandler(vo));
+		List<Map<String, Object>> returnData = Lists.newLinkedList();
+		resultMap.keySet().stream().forEach((member) -> {
+			Future<SpringBeanRegisterVO> future = resultMap.get(member);
+			
+			String instance_id = member.getStringAttribute("InstanceID") + "_" + member.getAddress();
+			String message = null;
+			String status = null;
+			
+			SpringBeanRegisterVO resVo = null;
+			try {  
+				resVo = future.get(30, TimeUnit.SECONDS);
+				message =  instance_id + ", Result : " + future.isDone() + ", " + resVo.getResult();
+				status = "Success";
+			} catch (Exception e) {
+				message = instance_id + ", Result : error, " + CommonUtils.getPrintStackTrace(e);
+				status = "Fail";
+				LOG.warn("[HazelCastExcutorForRegister] >> deployAdapterToClusterdAllMembers :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			}
+			if(ObjectUtils.isEmpty(resVo)) {
+				resVo = new SpringBeanRegisterVO();
+			}
+			
+			Map<String, Object> returnMap = new LinkedHashMap<String, Object>();
+			returnMap.put("command", command.getCommand().toUpperCase());
+			returnMap.put("server_id", instance_id);
+			returnMap.put("status", status);
+			returnMap.put("message", message);			
+			if(!resVo.getResultMap().isEmpty()) 
+				returnMap.putAll(resVo.getResultMap());
+			returnData.add(returnMap);
+		});
+		return returnData;
+	}
+	
+	public List<Map<String, Object>> deployInterfaceToClusterdAllMembers(CamelRouterRegisterVO.COMMAND command
+			, String routesXml, String routerId, String description) {
+		
+		HazelcastInstance instance = hazelCastManager.getInstance();
+		IExecutorService executor = instance.getExecutorService("HzCamelRouterCluserService");
+		
+		CamelRouterRegisterVO vo = new CamelRouterRegisterVO();
+		vo.setCommand(command);
+		vo.setRouter_xml(routesXml);
+		vo.setRouter_id(routerId);
+		vo.setRouter_definition(description);
+		
+		Map<Member, Future<CamelRouterRegisterVO>> resultMap = executor.submitToAllMembers(new CamelRouterClusterHandler(vo));
+		List<Map<String, Object>> returnData = Lists.newLinkedList();
+		resultMap.keySet().stream().forEach((member) -> {
+			Future<CamelRouterRegisterVO> future = resultMap.get(member);
+			
+			String instance_id = member.getStringAttribute("InstanceID") + "_" + member.getAddress();
+			String message = null;
+			String status = null;
+			
+			CamelRouterRegisterVO resVo = null;
+			try {  
+				resVo = future.get(30, TimeUnit.SECONDS);
+				message = instance_id + ", Result : " + future.isDone() + ", " + resVo.getResult();
+				status = "Success";
+			} catch (Exception e) {
+				message = instance_id + ", Result : error, " + CommonUtils.getPrintStackTrace(e);
+				status = "Fail";
+				LOG.warn("[HazelCastExcutorForRegister] >> deployInterfaceToClusterdAllMembers :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			}
+			if(ObjectUtils.isEmpty(resVo)) {
+				resVo = new CamelRouterRegisterVO();
+			}
+				
+			Map<String, Object> returnMap = new LinkedHashMap<String, Object>();
+			returnMap.put("command", command.getCommandString().toUpperCase());
+			returnMap.put("server_id", instance_id);
+			returnMap.put("status", status);
+			returnMap.put("message", message);
+			if(!resVo.getResultMap().isEmpty()) 
+				returnMap.putAll(resVo.getResultMap());
+			returnData.add(returnMap);
+		});
+		return returnData;
+	}	
+	
+	public List<Map<String, Object>> deployBeanToClusterdAllMembers(SpringBeanRegisterVO.COMMAND command
+			, String beanXml, String beanId, String description) {
+		
+		HazelcastInstance instance = hazelCastManager.getInstance();
+		IExecutorService executor = instance.getExecutorService("HzCamelRouterCluserService");
+		
+		SpringBeanRegisterVO vo = new SpringBeanRegisterVO();
+		vo.setCommand(command);
+		vo.setBean_xml(beanXml);
+		vo.setBean_id(beanId);
+		vo.setBean_definition(description);
+		
+		Map<Member, Future<SpringBeanRegisterVO>> resultMap = executor.submitToAllMembers(new SpringBeanClusterHandler(vo));
+		List<Map<String, Object>> returnData = Lists.newLinkedList();
+		resultMap.keySet().stream().forEach((member) -> {
+			Future<SpringBeanRegisterVO> future = resultMap.get(member);
+			
+			String instance_id = member.getStringAttribute("InstanceID") + "_" + member.getAddress();
+			String message = null;
+			String status = null;
+			
+			SpringBeanRegisterVO resVo = null;
+			try {  
+				resVo = future.get(30, TimeUnit.SECONDS);
+				message = instance_id + ", Result : " + future.isDone() + ", " + resVo.getResult();
+				status = "Success";
+			} catch (Exception e) {
+				message = instance_id + ", Result : error, " + CommonUtils.getPrintStackTrace(e);
+				status = "Fail";
+				LOG.warn("[HazelCastExcutorForRegister] >> deployInterfaceToClusterdAllMembers :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			}
+			if(ObjectUtils.isEmpty(resVo)) {
+				resVo = new SpringBeanRegisterVO();
+			}
+				
+			Map<String, Object> returnMap = new LinkedHashMap<String, Object>();
+			returnMap.put("command", command.getCommand().toUpperCase());
+			returnMap.put("server_id", instance_id);
+			returnMap.put("status", status);
+			returnMap.put("message", message);
+			if(!resVo.getResultMap().isEmpty()) 
+				returnMap.putAll(resVo.getResultMap());
+			returnData.add(returnMap);
+		});
+		return returnData;
+	}		
+	
+}
+
