@@ -1,0 +1,184 @@
+/*
+ * Copyright Hyundai AutoEver.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai AutoEver. ("Confidential Information").
+ */
+package com.xconnect.eai.server.service.processor.system; 
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.dao.service.processor.SystemInitializeProcessorDAO;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.common.util.LogSummaryManager;
+import com.xconnect.eai.server.service.processor.system.impl.ScheduleJobManagerImpl;
+import com.xconnect.eai.server.service.register.CamelRouterManager;
+import com.xconnect.eai.server.service.register.SpringBeanManager;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.service.processor.system 
+ *    |_ SystemInitializeProcessor.java
+ * 
+ * </pre>
+ * @date : 2019. 12. 26. 오전 9:11:55
+ * @version : 
+ * @author : A931744
+ */
+@Component("systemInitializeProcessor")
+public class SystemInitializeProcessor implements Processor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(SystemInitializeProcessor.class);
+
+	@Autowired
+	private SystemInitializeProcessorDAO systemInitializeProcessorDAO;
+//	@Autowired
+//	private ScheduleJobManagerImpl scheduleJobManagerImpl;
+	@Autowired
+	private LogSummaryManager logSummaryManager;
+	@Value("${SERVER_ID: SVR0000001}")
+	private String thisServerID;
+
+	@Override
+	public void process(Exchange exchange) throws Exception {
+		Map<String, Object> paramMap = new HashMap<String, Object>();
+		
+		///////////////////////////////////////////////////////
+		//서버 최초 기동시 DISK테이블에서 메모리 테이블로 최근 두 시간 데이타를 로딩작업 호출
+		logSummaryManager.interfaceLog_mem_init();
+
+		////////////////////////////////////////////////////////////////////////////////////////////////
+		// 1. EAI Server Adapter 정보를 가져와 기동한다.
+		List<Map<String, Object>> eaiAdapterInfoList = systemInitializeProcessorDAO.selectEaiAdapterInfoList();
+		for(Map<String, Object> eaiAdapterInfoMap : eaiAdapterInfoList) {
+			try {
+				int iAdapterNo = (int) eaiAdapterInfoMap.get("ADAPTER_NO");
+				paramMap.clear();
+				paramMap.put("ADAPTER_NO", iAdapterNo);
+				List<Map<String, Object>> eaiAdapterParams = systemInitializeProcessorDAO.selectEaiAdapterPrameterInfoList(paramMap);
+				
+				String beanIdString = eaiAdapterInfoMap.get("BEAN_ID").toString();
+				String eaiAdapterBeanXmlString = new String( (byte[])eaiAdapterInfoMap.get("BEAN_SCRIPT") );
+				eaiAdapterBeanXmlString = eaiAdapterBeanXmlString.replaceAll("[$]\\{bean_id\\}", beanIdString);
+				
+				List<Map<String, Object>> eaiAdapterRegistResult = null;
+				if(eaiAdapterBeanXmlString.trim().startsWith("<routes"))		// Camel Router Adapter
+					eaiAdapterRegistResult = CamelRouterManager.CamelRouterRegister(eaiAdapterBeanXmlString, beanIdString, "");
+				else 															// Spring Bean Adapter
+					eaiAdapterRegistResult = SpringBeanManager.SpringBeanRegister(eaiAdapterBeanXmlString, eaiAdapterInfoMap.get("ADAPTER_NM").toString());
+				LOG.debug("[SystemInitializeProcessor] >> EAI Server Adapter 등록 :: " + eaiAdapterRegistResult);
+			} catch (Exception e) {
+				LOG.error("[SystemInitializeProcessor] >> process :: Error > " + CommonUtils.getPrintStackTrace(e));
+				//throw new XConnectEaiServerException("EAI Server 어댑터 등록에 실패하였습니다.", XConnectEaiServerException.ADAPTER_REGIST_FAILED);
+			}
+		}
+
+		////////////////////////////////////////////////////////////////////////////////////////////////
+		// 2. CXF Beans 정보를 가져와 기동한다.
+		List<Map<String, Object>> cxfBeanInfoList = systemInitializeProcessorDAO.selectCxfBeansInfoList();
+		for(Map<String, Object> cxfBeanInfoMap : cxfBeanInfoList) {
+			try {
+				String beanId		= cxfBeanInfoMap.get("BEAN_ID").toString();
+				String address		= CommonUtils.strNvl(cxfBeanInfoMap.get("ADDRESS"), "");
+				String wsdlUrl		= CommonUtils.strNvl(cxfBeanInfoMap.get("WSDL_URL"), "");
+				String serviceName	= CommonUtils.strNvl(cxfBeanInfoMap.get("SERVICE_NM"), "");
+				String serviceClass	= CommonUtils.strNvl(cxfBeanInfoMap.get("SERVICE_CLASS"), "");
+				String endpointName	= CommonUtils.strNvl(cxfBeanInfoMap.get("ENDPOINT_NM"), "");
+				
+				String cxfBeanXml = SystemCommonConstants.SPRING_BEAN_PREFIX;
+				cxfBeanXml += "<cxf:cxfEndpoint id=\"" + beanId + "\"\n";
+				if(address != null && !address.trim().isEmpty())
+					cxfBeanXml += "	address=\"" + address + "\" \n" ;
+				if(endpointName != null && !endpointName.trim().isEmpty())
+					cxfBeanXml += "	endpointName=\"s:" + endpointName + "\" \n" ;
+				if(serviceName != null && !serviceName.trim().isEmpty())
+					cxfBeanXml += "	serviceName=\"s:" + serviceName + "\" \n" ;
+				if(wsdlUrl != null && !wsdlUrl.trim().isEmpty())
+					cxfBeanXml += "	wsdlURL=\"" + wsdlUrl + "\" \n" ;
+				if(serviceClass != null && !serviceClass.trim().isEmpty())
+					cxfBeanXml += "	serviceClass=\"" + serviceClass + "\" \n" ;
+				cxfBeanXml += "	xmlns:s=\"http://eai.xconnect.com/webservice/tns\" />";
+				cxfBeanXml += SystemCommonConstants.SPRING_BEAN_SURFIX;
+
+				List<Map<String, Object>> cxfBeanRegistResult = SpringBeanManager.SpringBeanRegister(cxfBeanXml, "");
+				LOG.debug("[SystemInitializeProcessor] >> CXF Bean 등록 :: " + cxfBeanRegistResult);
+			} catch (Exception e) {
+				LOG.error("[SystemInitializeProcessor] >> process :: Error > " + CommonUtils.getPrintStackTrace(e));
+			}
+		}
+		
+		////////////////////////////////////////////////////////////////////////////////////////////////
+		// 3. Adapter 정보를 가져와 기동한다.
+		List<Map<String, Object>> adapterInfoList = systemInitializeProcessorDAO.selectAdapterInfoList();
+		for(Map<String, Object> adapterInfoMap : adapterInfoList) {
+			try {
+				int iAdapterNo = (int) adapterInfoMap.get("ADAPTER_NO");
+				int iSystemNo = (int) adapterInfoMap.get("SYSTEM_NO");
+				paramMap.clear();
+				paramMap.put("iAdapterNo", iAdapterNo);
+				paramMap.put("iSystemNo", iSystemNo);
+				List<Map<String, Object>> adapterParams = systemInitializeProcessorDAO.selectAdapterPrameterInfoList(paramMap);
+				
+				String adapterBeanXmlString = new String( (byte[])adapterInfoMap.get("BEAN_SCRIPT") );
+				
+				List<Map<String, Object>> adapterRegistResult = SpringBeanManager.SpringBeanRegister(adapterBeanXmlString, adapterInfoMap.get("ADAPTER_NM").toString());
+				LOG.debug("[SystemInitializeProcessor] >> Adapter 등록 :: " + adapterRegistResult);
+			} catch (Exception e) {
+				LOG.error("[SystemInitializeProcessor] >> process :: Error > " + CommonUtils.getPrintStackTrace(e));
+				//throw new XConnectEaiServerException("어댑터 등록에 실패하였습니다.", XConnectEaiServerException.ADAPTER_REGIST_FAILED);
+			}
+		}
+		
+		////////////////////////////////////////////////////////////////////////////////////////////////
+		// 4. Interface 정보를 가져와 기동한다.
+		List<Map<String, Object>> interfaceInfoList = systemInitializeProcessorDAO.selectRunningInterfaceInfoList();
+		for(Map<String, Object> interfaceInfoMap : interfaceInfoList) {
+			try {
+				String beanXmlString = null;
+				try {
+					beanXmlString = new String((byte[])interfaceInfoMap.get("BEAN_SCRIPT"));
+				} catch (Exception e) { }
+				String routerXmlString = new String((byte[])interfaceInfoMap.get("XML_SRC"));
+				String interface_id = interfaceInfoMap.get("IF_ID").toString();
+				String interface_ver = interfaceInfoMap.get("IF_VER_NO").toString();
+				
+				List<Map<String, Object>> adapterRegistResult = null;
+				if(beanXmlString != null) adapterRegistResult = SpringBeanManager.SpringBeanRegister(beanXmlString, "");
+				List<Map<String, Object>> routerRetistResult = CamelRouterManager.CamelRouterRegister(routerXmlString, interface_id + "_" + interface_ver, "");
+				if(beanXmlString != null) LOG.debug("[SystemInitializeProcessor] >> Running Interface Spring Bean 등록 :: " + adapterRegistResult);
+				LOG.debug("[SystemInitializeProcessor] >> Running Interface Camel Route 등록 :: " + routerRetistResult);
+			} catch (Exception e) {
+				LOG.error("[SystemInitializeProcessor] >> process :: Error > " + CommonUtils.getPrintStackTrace(e));
+				//throw new XConnectEaiServerException("EAI Server 인터페이스 등록에 실패하였습니다.", XConnectEaiServerException.INTERFACE_REGIST_FAILED);
+			}
+		}
+			
+		////////////////////////////////////////////////////////////////////////////////////////////////
+		// 5. Interface 스케줄 정보를 가져와 기동한다.
+		paramMap.clear();
+		paramMap.put("DEL_YN", "N");
+		List<Map<String, Object>> interfaceScheduleInfoList = systemInitializeProcessorDAO.selectInterfaceScheduleInfoList(paramMap);
+		for(Map<String, Object> scheduleInfoMap : interfaceScheduleInfoList) {
+			try {
+				ScheduleJobManagerImpl.makeScheduleJob(scheduleInfoMap);
+			} catch (Exception e) {
+				LOG.error("[SystemInitializeProcessor] >> process :: Error > " + CommonUtils.getPrintStackTrace(e));
+				//throw new XConnectEaiServerException("EAI Server 스케줄 등록에 실패하였습니다.", XConnectEaiServerException.SCHEDULE_REGIST_FAILED);
+			}
+		}
+
+	}
+}
