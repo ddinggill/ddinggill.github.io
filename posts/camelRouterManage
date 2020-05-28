@@ -67,3 +67,356 @@ CamelContext camelCtx = this.getContext().getBean(SystemCommonConstants.CAMEL_CO
 RouteDefinition logListener = camelCtx.getRouteDefinition(SystemCommonConstants.CAMEL_LOG_LISTENER_ROUTE_ID);
 ServiceStatus status = logListener.getStatus(camelCtx);
 status.isStarted() / status.isStopped() / status.isSuspended() 등등으로 상태확인
+
+ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+풀소스
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.service.register; 
+
+import java.io.ByteArrayInputStream;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.Route;
+import org.apache.camel.ServiceStatus;
+import org.apache.camel.model.ProcessorDefinition;
+import org.apache.camel.model.RouteDefinition;
+import org.apache.camel.model.RouteDefinitionHelper;
+import org.apache.camel.model.RoutesDefinition;
+import org.apache.camel.model.ThreadsDefinition;
+import org.apache.camel.model.ToDefinition;
+import org.apache.camel.model.TransactedDefinition;
+import org.apache.camel.spring.spi.SpringTransactionPolicy;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.util.ObjectUtils;
+
+import com.google.common.collect.Lists;
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.dao.service.component.CamelComponentDAO;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.common.util.AliasReplaceUtils;
+import com.xconnect.eai.server.common.util.CamelHelper;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.service.processor.system.ExceptionProcessor;
+
+/**
+ * <pre>
+ * com.eai.server.camel.core.register.camel 
+ *    |_ CamelRouterManager.java
+ * 
+ * </pre>
+ * @date : 2019. 10. 31. 오후 2:15:07
+ * @version : 
+ * @author : A931744
+ */
+
+public class CamelRouterManager {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CamelRouterManager.class);
+
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Spring DSL로 기술된 XML을 Camel Context 에 등록한다.
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : CamelRouterRegister
+	 * @date : 2019. 12. 31.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 31.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param bean_xml
+	 * @param strRouterId
+	 * @param strDescription
+	 * @return
+	 * @throws XConnectEaiServerException
+	 */
+	@SuppressWarnings("unchecked")
+	public static List<Map<String, Object>> CamelRouterRegister(String bean_xml, String strRouterId, String strDescription) throws XConnectEaiServerException {
+		try {
+			LOG.debug(String.format("[CamelRouterManager] >> CamelRouterRegister [%s] ", strDescription));
+			ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+			// Camel Router 등록
+			Map<String, Object> rstMap = null;
+			List<Map<String, Object>> routeList = Lists.newArrayList();
+
+			List<String> idList = CommonUtils.findIdInXml(bean_xml, false);
+			String ifIdVerString = idList.get(0);
+			
+			////////////////////////////////////////////////
+			// I. 실행인터페이스 테이블에서 인터페이스 정보를 가져옴 & Alias 테이블에서 Alias 정보 가져옴
+			CamelComponentDAO componentDao = CamelHelper.getInstance().getCamelComponentDAO();
+			Map<String, Object> params = new HashMap<>();
+			params.put("IF_ID", 	ifIdVerString.substring(0, strRouterId.lastIndexOf("_")) );
+			params.put("IF_VER_NO",	ifIdVerString.substring(strRouterId.lastIndexOf("_") + 1) );
+			Map<String, Object> devRunningIfInfo = componentDao.selectDevRunningInterfaceInfo(params);
+			
+			if(!bean_xml.trim().equalsIgnoreCase("")) {
+				CamelContext camel_ctx = (CamelContext) ctx.getBean(SystemCommonConstants.CAMEL_CONTEXT_ID);
+				
+				////////////////////////////////////////////////
+				// II. Alias 치환
+				bean_xml = new AliasReplaceUtils().replace(bean_xml);
+
+				RoutesDefinition routes = camel_ctx.loadRoutesDefinition(new ByteArrayInputStream(bean_xml.getBytes("UTF-8")));
+				routes.setId(strRouterId);
+				routes.description(strDescription);
+				List<RouteDefinition> routeDefList = routes.getRoutes();
+				for (RouteDefinition route : routeDefList) {
+					
+					// JDBC component의경우 DataSource를 얻는다. --> Transaction Setting의 Ref 설정
+					String txManagerRef = "";
+					for(ProcessorDefinition<?> output : route.getOutputs()) {
+						boolean exit = false;
+						if(output instanceof ToDefinition) {
+							ToDefinition to = (ToDefinition) output;
+							String uri = to.getUri();
+							if(uri.startsWith("xconnect-jdbc")) {
+								// xconnect-jdbc-query:insert?dataSource=DAOS&transacted=true&verbose=false
+								String options = uri.split("[?]")[1];
+								String[] parameters = options.split("[&]");
+								for(String parameter : parameters) {
+									if(parameter.split("=")[0].equalsIgnoreCase("dataSource")) {
+										txManagerRef = parameter.split("=")[1];
+										exit = true;
+										break;
+									}
+								}
+							}
+						}
+						if(exit) break; 
+					}
+					////////////////////////////////////////////////
+					// III. Camel Router Thread Pool 설정
+					if(devRunningIfInfo != null && !CommonUtils.strNvl(devRunningIfInfo.get("TR_POOL_USE_YN"), "D").equalsIgnoreCase("D")) {
+						int trMin = Double.valueOf( CommonUtils.strNvl(devRunningIfInfo.get("TR_MIN"), "0") ).intValue();
+						int trMax = Double.valueOf( CommonUtils.strNvl(devRunningIfInfo.get("TR_MAX"), "0") ).intValue();
+						List<ProcessorDefinition<?>> outputs = route.getOutputs();
+						ThreadsDefinition threadDf = new ThreadsDefinition();
+						if(CommonUtils.strNvl(devRunningIfInfo.get("TR_POOL_USE_YN"), "D").equalsIgnoreCase("Y")) {
+							threadDf.setPoolSize(trMin);
+							threadDf.setMaxPoolSize(trMax);
+						} else {
+							threadDf.setPoolSize(1);
+							threadDf.setMaxPoolSize(1);
+						}
+						threadDf.setId("ThreadPool-" + route.getId());
+						for(ProcessorDefinition<?> output : outputs)  threadDf.addOutput(output);
+						route.clearOutput();
+						route.addOutput(threadDf);
+					}
+
+					////////////////////////////////////////////////
+					// IV. Camel Router Global Transaction 설정 (GBL_TRAN_USE_YN)
+					if(devRunningIfInfo != null && devRunningIfInfo.get("GBL_TRAN_USE_YN") != null 
+							&& devRunningIfInfo.get("GBL_TRAN_USE_YN").toString().equalsIgnoreCase("Y")
+							&& !txManagerRef.isEmpty()) {
+						SpringTransactionPolicy policy = new SpringTransactionPolicy();
+						DataSourceTransactionManager transactionManager = CamelHelper.getInstance().getContext().getBean(txManagerRef + "_transactionManager", DataSourceTransactionManager.class);
+						policy.setTransactionManager(transactionManager);
+						TransactedDefinition transXdf = new TransactedDefinition(policy);
+						List<ProcessorDefinition<?>> outputs = route.getOutputs();
+						transXdf.setId("Transacted-" + route.getId());
+						for(ProcessorDefinition<?> output : outputs) transXdf.addOutput(output);
+						route.clearOutput();
+						route.addOutput(transXdf);
+					}
+					
+					////////////////////////////////////////////////
+					// V. Route Exception Handler 설정
+					route.onException(Exception.class, XConnectEaiServerException.class)
+					.handled(true)
+					.process(ctx.getBean(SystemCommonConstants.CAMEL_ERROR_HANDLER_ID, ExceptionProcessor.class));
+
+					rstMap = new LinkedHashMap<String, Object>();
+					rstMap.put("route_id", route.getId());
+					RouteDefinitionHelper.sanityCheckRoute(route);
+					camel_ctx.addRouteDefinition(route);
+					camel_ctx.startRoute(route.getId());
+					
+					rstMap.put("command", "REGISTER");			
+					rstMap.put("status", "success");
+					routeList.add(rstMap);
+				}
+			} else {
+				rstMap = new LinkedHashMap<String, Object>();
+				rstMap.put("command", "REGISTER");	
+				rstMap.put("status", "fail");
+				rstMap.put("reason", "PARAM_ROUTE_XML_IS_NULL");
+				routeList.add(rstMap);
+			}
+			return routeList;
+		} catch (Exception e) {
+			LOG.error("[CamelRouterManager] >> CamelRouterRegister > Error! :: {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.CAMEL_ROUTER_REGIST_FAILED);
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Camel Context 에서 route_id 를 정지하고 삭제처리한다.
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : CamelRouterDelete
+	 * @date : 2019. 12. 31.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 31.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param route_id
+	 * @return
+	 * @throws XConnectEaiServerException
+	 */
+	public static Map<String, Object> CamelRouterDelete(String route_id) throws XConnectEaiServerException {
+		try {
+			LOG.debug("[CamelRouterManager] >> CamelRouterDelete");
+			ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+			// Camel Router 삭제
+			Map<String, Object> rstMap = new LinkedHashMap<String, Object>();
+			rstMap.put("route_id", route_id);
+			rstMap.put("command", "DELETE");
+			if(!StringUtils.isEmpty(route_id)) {
+				CamelContext camel_ctx = (CamelContext) ctx.getBean(SystemCommonConstants.CAMEL_CONTEXT_ID);
+				Route route = camel_ctx.getRoute(route_id);
+				if(!ObjectUtils.isEmpty(route)) {
+					camel_ctx.stopRoute(route_id);
+					camel_ctx.removeRoute(route_id);
+					rstMap.put("status", "success");
+				} else {
+					rstMap.put("status", "fail");
+					rstMap.put("reason", "UNREGISTERED");
+				}
+			} else {
+				rstMap.put("status", "fail");
+				rstMap.put("reason", "PARAM_ROUTEI_ID_IS_NULL");
+			}
+			return rstMap;
+		} catch (Exception e) {
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.CAMEL_ROUTER_DELETE_FAILED);
+		}
+	}
+	
+
+	public static Map<String, Object> CamelRouterCommand(String route_id, String command) throws XConnectEaiServerException {
+		try {
+			LOG.debug("[CamelRouterManager] >> CamelRouterCommand :: command = " + command);
+			ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+			// Camel Router Command (start/stop/pause/restart) 실행
+			if(!route_id.trim().equalsIgnoreCase("")) {
+				CamelContext camel_ctx = (CamelContext) ctx.getBean(SystemCommonConstants.CAMEL_CONTEXT_ID);
+				Route route = camel_ctx.getRoute(route_id);
+				if(!ObjectUtils.isEmpty(route)) {
+					switch (command.toLowerCase()) {
+					case "start":
+						camel_ctx.startRoute(route_id);
+						break;
+					case "pause":
+						camel_ctx.suspendRoute(route_id);
+						break;
+					case "stop":
+						camel_ctx.stopRoute(route_id);
+						break;
+					case "restart":
+						camel_ctx.stopRoute(route_id);
+						camel_ctx.startRoute(route_id);
+						break;
+					default:
+						throw new XConnectEaiServerException("INVALID_COMMAND ["+command.toLowerCase()+"].");
+					}
+				} else {
+					LOG.warn("Camel Context에 해당 ROUTER ID가 존재하지 않습니다. Router ID = {}, Command = {}", route_id, command);
+					// throw new XConnectEaiServerException("UNREGISTERED ["+command.toLowerCase()+"].");
+				}
+			} else {
+				throw new XConnectEaiServerException("PARAM_ROUTE_ID_IS_NULL");
+			}
+			Map<String, Object> rstMap = new LinkedHashMap<String, Object>();
+			rstMap.put("route_id", route_id);
+			rstMap.put("command", command.toUpperCase());
+			rstMap.put("status", "success");
+			return rstMap;
+		} catch (Exception e) {
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.CAMEL_ROUTER_COMMAND_FAILED);
+		}
+	}
+	
+	public static List<Map<String, Object>> getRoutesInfo(String bean_xml) throws XConnectEaiServerException {
+
+		ConfigurableApplicationContext ctx = CamelHelper.getInstance().getContext();
+		CamelContext camel_ctx = (CamelContext) ctx.getBean(SystemCommonConstants.CAMEL_CONTEXT_ID);
+		
+		Map<String, Object> routeMap = null;
+		List<Map<String, Object>> resultList = Lists.newArrayList();
+		if (StringUtils.isEmpty(bean_xml)) {
+			List<Route> routes = camel_ctx.getRoutes();
+			for(Route route : routes) {
+				ServiceStatus status = camel_ctx.getRouteStatus(route.getId());
+				String msg = status.isStarted() ? "STARTED" : (status.isStopped() ? "STOPPED" : (status.isSuspended() ? "SUSPENDED" : "UNKNOWN"));
+				routeMap = new LinkedHashMap<String, Object>();
+				routeMap.put("route_id", route.getId());
+				routeMap.put("command", "READ");
+				routeMap.put("status", msg);
+				resultList.add(routeMap);
+			}
+		} else {
+			List<String> beanNames = getIdsFromXml(bean_xml);
+			for(String name : beanNames) {
+				routeMap = new LinkedHashMap<String, Object>();
+				Route route = camel_ctx.getRoute(name);
+				if(!ObjectUtils.isEmpty(route)) {
+					ServiceStatus status = camel_ctx.getRouteStatus(route.getId());
+					String msg = status.isStarted() ? "STARTED" : (status.isStopped() ? "STOPPED" : (status.isSuspended() ? "SUSPENDED" : "UNKNOWN"));
+					routeMap.put("route_id", route.getId());
+					routeMap.put("command", "READ");
+					routeMap.put("status", msg);
+				} else {
+					routeMap.put("route_id", name);
+					routeMap.put("command", "READ");
+					routeMap.put("status", "N/A");
+					routeMap.put("reason", "UNREGISTERED");
+				}
+				resultList.add(routeMap);
+			}
+		}
+		return resultList;
+	}		
+	
+	private static List<String> getIdsFromXml(String xmlSrc) throws XConnectEaiServerException {
+		try {
+			return CommonUtils.findIdInXml(xmlSrc, false);
+		} catch (Exception e) {
+			// TODO :ErrorCode - FIND_ID_IN_XML_FAILED
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.NON_SPECIFY_ERROR);
+		}
+	}
+}
+
+
