@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+ 
+<mapper namespace="com.xconnect.eai.web.monitoring.topology.dao.TopologyDAO">
+
+    <!-- ==================================================================================== -->
+    <!-- 0. Reference Statement -->
+    <!-- ==================================================================================== -->
+
+
+
+
+
+
+
+	<!-- ==================================================================================== -->
+    <!-- 1. Select Statement -->
+    <!-- ==================================================================================== -->
+    <select id="selectIfSystemInfo" parameterType="com.xconnect.eai.web.monitoring.topology.vo.TopologyVO" resultType="com.xconnect.eai.web.monitoring.topology.vo.TopologyVO">
+    	/* SqlId = TopologyDAO.selectIfSystemInfo */
+		SELECT 
+			AB.SYSTEM_NO
+			, AB.SYSTEM_ID AS ID
+			, AB.SVC_IP_DOMAIN AS IP
+			, AB.SVC_PORT_INFO AS PORT
+			, AB.PROTOCOL_CD AS PROTOCOL
+			, AB.ZONE_TYPE_CD AS ZONE
+			, AB.RNUM AS SEQ
+		 	, D.H_POS  
+		 	, D.V_POS 
+			, 'MAST' AS ATTR
+			, CASE WHEN AB.STAT_CHECK_YN = 'Y' THEN AB.CONN_STAT_CD
+				   ELSE EF.ADAPTER_STAT_CD END AS ADAPTER_STAT_CD
+			, CASE WHEN AB.STAT_CHECK_YN = 'Y' THEN AB.CONN_STAT_DT
+				   ELSE EF.ADAPTER_STAT_DT END AS ADAPTER_STAT_DT
+			, 'Y' AS SYSPOS
+		 FROM 
+		 	(
+				SELECT 
+				    Z.SYSTEM_NO
+				    , Z.SYSTEM_ID
+				    , Z.STAT_CHECK_YN
+				    , Z.CONN_STAT_CD
+				    , Z.CONN_STAT_DT
+				    , Z.SVC_IP_DOMAIN
+				    , Z.SVC_PORT_INFO
+				    , Z.PROTOCOL_CD
+				    , Z.ZONE_TYPE_CD    
+				    , CASE @GROUPING WHEN Z.ZONE_TYPE_CD 
+				        THEN @ROWNUM := @ROWNUM + 1
+				        ELSE @ROWNUM := 1 END AS RNUM
+				    , @GROUPING := Z.ZONE_TYPE_CD AS GRP_ZONE                    
+				FROM 
+				    (
+				    SELECT 
+				        A.SYSTEM_NO
+				        , A.SYSTEM_ID
+				        , A.STAT_CHECK_YN
+				        , A.CONN_STAT_CD
+				        , A.CONN_STAT_DT
+				        , A.SVC_IP_DOMAIN
+				        , A.SVC_PORT_INFO
+				        , A.PROTOCOL_CD
+				        , A.ZONE_TYPE_CD
+				     FROM 
+				        TB_COM_IF_SYSTEM_INFO AS A
+				        INNER JOIN TB_COM_EAI_SVR_IF_SYSTEM_LIST AS B 
+				                ON A.DEL_YN = 'N'
+				               AND A.ZONE_TYPE_CD IN ('LAN', 'ITZ') 
+				               AND A.SYSTEM_NO = B.SYSTEM_NO
+				               AND A.SYSTEM_ID = B.SYSTEM_ID
+				    LIMIT 10000
+				    ) AS Z , (SELECT @GROUPING := '', @ROWNUM := 0) AS R
+				ORDER BY Z.ZONE_TYPE_CD, Z.SYSTEM_NO 
+			 ) AS AB
+			INNER JOIN TB_COM_TOPOLOGY_SYSTEM_POS AS D  
+					ON AB.ZONE_TYPE_CD = D.ZONE_TYPE_CD
+				   AND AB.RNUM = D.SEQ_NO 
+			LEFT OUTER JOIN (
+							SELECT 
+								E.SYSTEM_NO
+								, E.ADAPTER_NO
+								, E.SORT_ORDER_NO
+								, E.ADAPTER_TYPE_CD
+								, E.ADAPTER_NM
+								, E.ADAPTER_STAT_CD
+								, E.ADAPTER_STAT_DT
+								, E.USE_YN
+								, E.DEL_YN
+							FROM TB_COM_ADAPTER_INFO AS E 
+								INNER JOIN TB_COM_CODE_DET AS F 
+										ON E.ADAPTER_TYPE_CD = F.CODE_VAL
+									   AND E.USE_YN = 'Y'
+									   AND E.DEL_YN = 'N'
+									   AND F.LANG_CD = 'en'	
+									   AND F.FILTER_COND2_STR = 'Connect'
+									   AND F.DEL_YN = 'N'
+						) AS EF 
+						 ON AB.SYSTEM_NO = EF.SYSTEM_NO
+		UNION ALL 
+		SELECT 
+			A.SYSTEM_NO
+			, A.SYSTEM_ID AS ID 
+			, A.SVC_IP_DOMAIN AS IP 
+			, A.SVC_PORT_INFO AS PORT 
+			, A.PROTOCOL_CD AS PROTOCOL
+			, A.ZONE_TYPE_CD AS ZONE
+			, C.SEQ_NO AS SEQ
+            , CASE WHEN C.H_POS IS NULL THEN F.H_POS
+                   ELSE C.H_POS END AS H_POS
+            , CASE WHEN C.V_POS IS NULL THEN F.V_POS
+                   ELSE C.V_POS END AS H_POS
+			, 'USER' AS ATTR
+			, CASE WHEN A.STAT_CHECK_YN = 'Y' THEN A.CONN_STAT_CD
+				   ELSE DE.ADAPTER_STAT_CD END AS ADAPTER_STAT_CD
+			, CASE WHEN A.STAT_CHECK_YN = 'Y' THEN A.CONN_STAT_DT
+				   ELSE DE.ADAPTER_STAT_DT END AS ADAPTER_STAT_DT
+            , CASE WHEN C.H_POS IS NULL OR C.V_POS IS NULL THEN 'Y'
+                   ELSE 'N' END AS SYSPOS
+		 FROM 
+	 		TB_COM_IF_SYSTEM_INFO AS A
+	 		INNER JOIN TB_COM_EAI_SVR_IF_SYSTEM_LIST AS B 
+					ON A.DEL_YN = 'N'
+				   AND A.ZONE_TYPE_CD IN ('LAN', 'ITZ')	
+				   AND A.SYSTEM_NO = B.SYSTEM_NO
+		   		   AND A.SYSTEM_ID = B.SYSTEM_ID 
+			INNER JOIN TB_ADM_TOPOLOGY_USER_SET AS C 
+					ON A.SYSTEM_ID = C.SYSTEM_ID
+				   AND C.USER_ID = #{regUserId}				   
+			LEFT OUTER JOIN (
+							SELECT 
+								D.SYSTEM_NO
+								, D.ADAPTER_NO
+								, D.SORT_ORDER_NO
+								, D.ADAPTER_TYPE_CD
+								, D.ADAPTER_NM
+								, D.ADAPTER_STAT_CD
+								, D.ADAPTER_STAT_DT
+								, D.USE_YN
+								, D.DEL_YN
+							FROM TB_COM_ADAPTER_INFO AS D 
+								INNER JOIN TB_COM_CODE_DET AS E 
+										ON D.ADAPTER_TYPE_CD = E.CODE_VAL
+									   AND D.USE_YN = 'Y'
+									   AND D.DEL_YN = 'N'
+									   AND E.LANG_CD = 'en'	
+									   AND E.FILTER_COND2_STR = 'Connect'
+									   AND E.DEL_YN = 'N'
+						) AS DE 
+						 ON A.SYSTEM_NO = DE.SYSTEM_NO
+            INNER JOIN TB_COM_TOPOLOGY_SYSTEM_POS AS F  
+                    ON F.ZONE_TYPE_CD = A.ZONE_TYPE_CD
+                   AND F.SEQ_NO = C.SEQ_NO
+	</select>	
+	
+	
+    <select id="selectEaiServerInfo" parameterType="com.xconnect.eai.web.monitoring.topology.vo.TopologyVO" resultType="com.xconnect.eai.web.monitoring.topology.vo.TopologyVO">
+		/* SqlId = TopologyDAO.selectEaiServerInfo */
+		SELECT 
+			B.ID
+			, B.SVR_TYPE
+			, B.ZONE
+			, B.IP
+			, B.PORT
+			, B.PROTOCOL
+			, B.RNUM AS SEQ
+			, C.H_POS
+			, C.V_POS
+		FROM(
+			SELECT 
+				A.SVR_ID AS ID
+				, A.SVR_TYPE_CD AS SVR_TYPE
+				, CASE WHEN A.ZONE_TYPE_CD = 'LAN' THEN 'EAI'
+					   ELSE A.ZONE_TYPE_CD END AS ZONE 
+				, A.SVC_IP_DOMAIN AS IP 
+				, A.SVC_PORT_NO AS PORT
+				, CASE WHEN A.SVR_TYPE_CD IN ('E','P') AND A.HOST_NM IS NOT NULL THEN 'https'
+					   ELSE '' END AS PROTOCOL 
+				, CASE @GROUPING WHEN CONCAT(A.ZONE_TYPE_CD, A.SVR_TYPE_CD)
+					THEN @ROWNUM := @ROWNUM + 1
+					ELSE @ROWNUM := 1 END AS RNUM
+				, @GROUPING := CONCAT(A.ZONE_TYPE_CD, A.SVR_TYPE_CD)
+			FROM (SELECT @GROUPING := '', @ROWNUM := 0) AS R
+				, TB_COM_EAI_SVR_INFO AS A 
+			WHERE A.DEL_YN = 'N'
+				AND A.SVR_TYPE_CD IN ('L', 'P', 'E')
+				AND A.ZONE_TYPE_CD IN ('DMZ', 'LAN')
+				AND A.SVR_ID NOT IN ('SVR0000001', 'SVR0000002')
+			ORDER BY 8, 7	 
+				) AS B 
+			INNER JOIN (
+						SELECT 'DMZ' AS ZONE, 'L' AS SVR_TYPE, 1 AS SEQ, 705 AS H_POS, 200 AS V_POS
+						UNION ALL
+						SELECT 'DMZ' AS ZONE, 'P' AS SVR_TYPE, 1 AS SEQ, 505 AS H_POS, 300 AS V_POS
+						UNION ALL
+						SELECT 'DMZ' AS ZONE, 'P' AS SVR_TYPE, 2 AS SEQ, 905 AS H_POS, 300 AS V_POS
+						UNION ALL
+						SELECT 'EAI' AS ZONE, 'L' AS SVR_TYPE, 1 AS SEQ, 705 AS H_POS, 400 AS V_POS
+						UNION ALL
+						SELECT 'EAI' AS ZONE, 'E' AS SVR_TYPE, 2 AS SEQ, 405 AS H_POS, 500 AS V_POS
+						UNION ALL
+						SELECT 'EAI' AS ZONE, 'E' AS SVR_TYPE, 1 AS SEQ, 705 AS H_POS, 500 AS V_POS
+						UNION ALL
+						SELECT 'EAI' AS ZONE, 'E' AS SVR_TYPE, 3 AS SEQ, 1005 AS H_POS, 500 AS V_POS) AS C
+					ON B.ZONE = C.ZONE
+				   AND B.SVR_TYPE = C.SVR_TYPE
+				   AND B.RNUM = C.SEQ	
+	</select>	
+	
+	
+	
+	<!-- ==================================================================================== -->
+    <!-- 2. Insert Statement -->
+    <!-- ==================================================================================== -->
+    <insert id="savePosition" parameterType="com.xconnect.eai.web.monitoring.topology.vo.TopologyVO">
+    	/* SqlId = TopologyDAO.selectEaiServerInfo */
+		INSERT 
+			INTO TB_ADM_TOPOLOGY_USER_SET 
+				(
+				  USER_ID
+				, SYSTEM_ID
+				, SEQ_NO
+				, H_POS
+				, V_POS
+				, REG_DT
+				, REG_USER_ID
+				) 
+			VALUES 
+				(
+				#{regUserId}
+				, #{id}
+				, #{seq}
+				, #{hPos}
+				, #{vPos}
+				, CURRENT_TIMESTAMP
+				, #{regUserId}
+				) 
+			  ON DUPLICATE KEY
+			UPDATE SEQ_NO=#{seq}
+				 , H_POS=#{hPos}
+				 , V_POS=#{vPos}
+				 , REG_DT=CURRENT_TIMESTAMP
+				 , REG_USER_ID=#{regUserId}
+    </insert>
+    
+    <!-- ==================================================================================== -->
+    <!-- 3. Update Statement -->
+    <!-- ==================================================================================== -->
+	
+	<!-- ==================================================================================== -->
+    <!-- 4. Delete Statement -->
+    <!-- ==================================================================================== -->
+	
+</mapper>
+
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+ 
+<mapper namespace="com.xconnect.eai.web.monitoring.topology.dao.TopologyInterfaceSystemPopDAO">
+
+    <!-- ==================================================================================== -->
+    <!-- 0. Reference Statement -->
+    <!-- ==================================================================================== -->
+
+
+
+
+
+
+
+	<!-- ==================================================================================== -->
+    <!-- 1. Select Statement -->
+    <!-- ==================================================================================== -->
+    <select id="selectInterfaceSystem" parameterType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemInfoVO" resultType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemInfoVO">
+		/* SqlId = TopologyInterfaceSystemPopDAO.selectInterfaceSystem */
+		SELECT 
+			CASE WHEN C.SYSTEM_ID IS NULL THEN 'N'
+				 ELSE 'Y' END AS SEL_YN
+			, A.IF_GRP_CD
+			, FN_GET_CODE_VAL_NM('C0033','en',IF_GRP_CD) AS IF_GRP_NM
+			, A.SYSTEM_ID AS SYSTEM_ID
+			, SVC_IP_DOMAIN
+			, A.PROTOCOL_CD
+			, FN_GET_CODE_VAL_NM('C0003','en',PROTOCOL_CD) AS PROTOCOL_NM
+			, A.SYSTEM_TYPE_CD
+			, FN_GET_CODE_VAL_NM('C0002','en', A.SYSTEM_TYPE_CD) AS SYSTEM_TYPE_NM
+			, A.ZONE_TYPE_CD
+			, FN_GET_CODE_VAL_NM('C0004','en',ZONE_TYPE_CD) AS ZONE_TYPE_NM
+			, A.SYSTEM_NO AS SYSTEM_NO
+		  FROM 
+		  	TB_COM_IF_SYSTEM_INFO AS A
+		  	INNER JOIN TB_COM_EAI_SVR_IF_SYSTEM_LIST AS B
+		  			ON A.SYSTEM_NO = B.SYSTEM_NO
+		  		   AND A.SYSTEM_ID = B.SYSTEM_ID
+		  		   AND A.DEL_YN = 'N'
+		  		   AND A.ZONE_TYPE_CD = #{zoneTypeCd}
+		  		   <if test="ifGrpCd != null and ifGrpCd != ''" >
+		   		   AND A.IF_GRP_CD = #{ifGrpCd}
+		  		   </if>
+		  		   <if test="systemTypeCd != null and systemTypeCd != ''" >
+		   		   AND A.SYSTEM_TYPE_CD = #{systemTypeCd}
+		  		   </if>
+			LEFT OUTER JOIN TB_ADM_TOPOLOGY_USER_SET AS C 
+						 ON B.SYSTEM_ID = C.SYSTEM_ID
+						AND C.USER_ID = #{updtUserId} 
+	</select>	
+	
+	<select id="getIfSysInfo" parameterType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemInfoVO" resultType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemInfoVO">
+		SELECT SYSTEM_NO,
+	       FN_GET_CODE_VAL_NM('C0002',#{currLang},SYSTEM_TYPE_CD) AS SYSTEM_TYPE,
+	       LAYER_TYPE_CD, 
+	       SYSTEM_ID, 
+	       MAJOR_PROC_TASK, 
+	       SVC_IP_DOMAIN, 
+	       SVC_PORT_INFO, 
+	       FN_GET_CODE_VAL_NM('C0003',#{currLang},PROTOCOL_CD) AS PROTOCOL,
+	       FN_GET_CODE_VAL_NM('C0004',#{currLang},ZONE_TYPE_CD) AS ZONE_TYPE,
+	       FN_GET_CODE_VAL_NM('C0033',#{currLang},IF_GRP_CD) AS IF_GRP,
+	       PTNR_ID, 
+	       SYSTEM_DESCR, 
+	       ACSBL_IP_MASK, 
+	       FW_OPEN_COMPL_YN, 
+	       DEL_YN, 
+	       DATE_ADD(REG_DT, INTERVAL #{utcBaseDiffSec} SECOND) AS REG_DT,
+           REG_USER_ID,
+           DATE_ADD(UPDT_DT, INTERVAL #{utcBaseDiffSec} SECOND) AS UPDT_DT, 
+     	   UPDT_USER_ID
+		FROM TB_COM_IF_SYSTEM_INFO
+		WHERE SYSTEM_ID = #{systemId}
+		      AND DEL_YN = 'N'
+	</select>	
+	
+	<select id="getIfChrgrInfoList" parameterType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemChrgrInfo" resultType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemChrgrInfo">
+		SELECT 
+			FORMAT(@rownum := @rownum+1, 0) AS rowno,
+		    A.SYSTEM_NO, 
+		    A.REC_SEQ_NO,
+		    B.CHRGR_NM,
+		    B.CHRG_TASK,
+		    B.CALL_NO
+ 		FROM TB_COM_IF_SYSTEM_CHRGR A
+ 		JOIN (SELECT 
+		          REC_SEQ_NO, 
+		          CHRGR_NM, 
+		          FN_GET_CODE_VAL_NM('C0009',#{currLang},CHRG_TASK_CD) AS CHRG_TASK,
+		          DEPT_NM, 
+		          EMP_NO, 
+		          IF(MOBILE_NO IS NOT NULL, CAST(FN_GET_MASKING_INFO(AES_DECRYPT(MOBILE_NO,#{encKey})) AS CHAR CHARACTER SET utf8), TEL_NO) AS CALL_NO,
+		          DEL_YN
+		       FROM TB_COM_CHRGR_MAST
+		       WHERE DEL_YN = 'N') B
+    	ON A.REC_SEQ_NO = B.REC_SEQ_NO
+    	JOIN (SELECT @rownum := 0) AS R
+ 		WHERE A.SYSTEM_NO = #{systemNo}
+	</select>	
+	
+	<select id="getEaiSvrInfo" parameterType="com.xconnect.eai.web.monitoring.topology.vo.EaiServerInfoVO" resultType="com.xconnect.eai.web.monitoring.topology.vo.EaiServerInfoVO">
+		SELECT 
+		   SVR_ID, 
+		   HOST_NM,
+		   FN_GET_CODE_VAL_NM('C0010',#{currLang},SVR_TYPE_CD) AS SVR_TYPE,
+		   FN_GET_CODE_VAL_NM('C0004',#{currLang},ZONE_TYPE_CD) AS ZONE_TYPE,
+		   PUBLIC_IP_ADDR, 
+		   PRIVATE_IP_ADDR, 
+		   FOREWARD_SVR_ID,
+		   BACKWARD_SVR_ID, 
+		   CPU_CORE, 
+		   MEMORY_SZ, 
+		   DATE_ADD(REG_DT, INTERVAL #{utcBaseDiffSec} SECOND) AS REG_DT,
+           REG_USER_ID,
+           DATE_ADD(UPDT_DT, INTERVAL #{utcBaseDiffSec} SECOND) AS UPDT_DT,
+		   UPDT_USER_ID 
+		FROM TB_COM_EAI_SVR_INFO
+		WHERE SVR_ID  = #{svrId}
+		  AND DEL_YN = 'N';
+	</select>
+	
+	<select id="getIfStatisticsList" parameterType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemInfoVO" resultType="java.util.Map">
+		SELECT 
+		    FORMAT(@rownum := @rownum+1, 0) AS rowno,
+		    A.IF_ID,
+		    A.IF_VER_NO,
+		    IF_NM,
+		    IFNULL(B.TOTAL_CNT, 0) AS TOTAL_CNT,
+		    IFNULL(B.FAIL_CNT, 0) AS FAIL_CNT
+		FROM TB_DEV_RUNNING_INTERFACE A
+		LEFT OUTER JOIN (SELECT 
+		                   IF_ID,
+		                   IF_VER_NO,
+		                   SUM(FAIL_CNT) AS FAIL_CNT, 
+		                   SUM(TOTAL_CNT) AS TOTAL_CNT
+		                 FROM TB_ADM_INTERFACE_STAT
+		                 WHERE (YYYYMMDD = DATE_FORMAT(CURRENT_TIMESTAMP, '%Y%m%d') AND HH24 = HOUR(CURRENT_TIMESTAMP))
+		                 	OR (YYYYMMDD = DATE_FORMAT(DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 1 HOUR), '%Y%m%d') AND HH24 = HOUR(DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 1 HOUR))) 
+		                 GROUP BY IF_ID,IF_VER_NO) B
+		ON (A.IF_ID = B.IF_ID
+		  AND A.IF_VER_NO = B.IF_VER_NO)
+		JOIN (SELECT @rownum := 0) AS R
+		WHERE (A.SRC_SYSTEM_ID LIKE CONCAT('%', #{systemId}, '%') AND A.TRGT_SYSTEM_ID LIKE CONCAT('%', #{systemIdSelf}, '%')) 
+		   OR (A.SRC_SYSTEM_ID LIKE CONCAT('%', #{systemIdSelf}, '%') AND A.TRGT_SYSTEM_ID LIKE CONCAT('%', #{systemId}, '%'))
+	</select>
+	<!-- ==================================================================================== -->
+    <!-- 2. Insert Statement -->
+    <!-- ==================================================================================== -->
+    <insert id="insertinterfacesystemSettings" parameterType="java.util.Map">
+    	/* SqlId = TopologyDAO."insertinterfacesystemSettings" */
+		INSERT 
+			INTO TB_ADM_TOPOLOGY_USER_SET 
+				(
+				  USER_ID
+				, SYSTEM_ID
+				, SEQ_NO
+				, REG_DT
+				, REG_USER_ID
+				) 
+				SELECT 
+					#{regUserId}
+					, ABC.SYSTEM_ID
+				 	, ABC.RNUM AS SEQ_NO
+					, CURRENT_TIMESTAMP
+					, #{regUserId}
+				FROM 
+					(SELECT 
+							A.SYSTEM_NO
+							, A.SYSTEM_ID
+							, A.SVC_IP_DOMAIN
+							, A.SVC_PORT_INFO
+							, A.PROTOCOL_CD
+							, A.ZONE_TYPE_CD
+							, CASE @GROUPING WHEN A.ZONE_TYPE_CD 
+								THEN @ROWNUM := @ROWNUM + 1
+								ELSE @ROWNUM := 1 END AS RNUM
+							, @GROUPING := A.ZONE_TYPE_CD					 
+					 FROM 
+					 		(SELECT @GROUPING := '', @ROWNUM := 0) AS R
+					 		, TB_COM_IF_SYSTEM_INFO AS A
+					 		INNER JOIN TB_COM_EAI_SVR_IF_SYSTEM_LIST AS B 
+									ON A.DEL_YN = 'N'
+								   AND A.ZONE_TYPE_CD = #{zoneTypeCd}
+								   AND A.SYSTEM_NO = B.SYSTEM_NO
+						   		   AND A.SYSTEM_ID = B.SYSTEM_ID 
+						   		   AND A.SYSTEM_ID IN (
+						   		   		<foreach collection="systemIdList" item="item" separator=",">
+						   		   		#{item, jdbcType=VARCHAR}
+						   		   		</foreach>)
+					 ORDER BY A.SYSTEM_NO	   	
+					) AS ABC
+    </insert>
+    
+    <select id="getEaiSysList" parameterType="java.lang.String" resultType="com.xconnect.eai.web.monitoring.topology.vo.IfSystemInfoVO">
+		SELECT 
+		  A.SYSTEM_ID, 
+		  A.MAJOR_PROC_TASK,
+		  A.SYSTEM_NO
+		FROM TB_COM_IF_SYSTEM_INFO A
+		JOIN (SELECT 
+		        DISTINCT SRC_SYSTEM_ID AS SYSTEM_ID
+		      FROM TB_DEV_RUNNING_INTERFACE
+		      WHERE SRC_SYSTEM_ID = #{systemId} OR TRGT_SYSTEM_ID = #{systemId}
+		      UNION DISTINCT
+		      SELECT 
+		        DISTINCT TRGT_SYSTEM_ID AS SYSTEM_ID
+		      FROM TB_DEV_RUNNING_INTERFACE
+		      WHERE SRC_SYSTEM_ID = #{systemId} OR TRGT_SYSTEM_ID = #{systemId}) B
+		ON A.SYSTEM_ID = B.SYSTEM_ID
+		AND A.SYSTEM_ID != #{systemId}
+	</select>	
+    <!-- ==================================================================================== -->
+    <!-- 3. Update Statement -->
+    <!-- ==================================================================================== -->
+	
+	<!-- ==================================================================================== -->
+    <!-- 4. Delete Statement -->
+    <!-- ==================================================================================== -->
+	<!-- userId, zoneTypeCd 조건으로 삭제 -->
+	<delete id="deleteInterfaceSystemSettings" parameterType="java.util.Map">
+		/* SqlId = TopologyInterfaceSystemPopDAO.deleteInterfaceSystemSettings */
+		DELETE 
+		  FROM 
+		  	TB_ADM_TOPOLOGY_USER_SET
+		WHERE 
+			USER_ID=#{regUserId} 
+			AND SYSTEM_ID IN (SELECT 
+									A.SYSTEM_ID 
+								FROM 
+								  	TB_COM_IF_SYSTEM_INFO AS A
+								  	INNER JOIN TB_COM_EAI_SVR_IF_SYSTEM_LIST AS B 
+								  			ON A.SYSTEM_NO = B.SYSTEM_NO
+								  		   AND A.SYSTEM_ID = B.SYSTEM_ID
+								  		   AND A.ZONE_TYPE_CD = #{zoneTypeCd})	
+
+	</delete>
+	
+	
+	
+	
+	
+</mapper>
+
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+ 
+<mapper namespace="com.xconnect.eai.web.monitoring.topology.dao.TopologyResourceStatusDAO">
+
+    <!-- ==================================================================================== -->
+    <!-- 0. Reference Statement -->
+    <!-- ==================================================================================== -->
+
+
+
+
+
+
+
+	<!-- ==================================================================================== -->
+    <!-- 1. Select Statement -->
+    <!-- ==================================================================================== -->
+    <select id="selectEaiServerInfo" parameterType="com.xconnect.eai.web.monitoring.topology.vo.EaiServerInfoVO" resultType="com.xconnect.eai.web.monitoring.topology.vo.EaiServerInfoVO">
+		/* SqlId = TopologyResourceStatusDAO.selectEaiServerInfo */
+		SELECT 
+			SVR_ID
+			, HOST_NM
+			, SVR_TYPE_CD
+			, FN_GET_CODE_VAL_NM('C0010',#{currLang},SVR_TYPE_CD) AS SVR_TYPE_NM
+			, ZONE_TYPE_CD
+			, FN_GET_CODE_VAL_NM('C0004',#{currLang},ZONE_TYPE_CD) AS ZONE_TYPE_NM
+			, PUBLIC_IP_ADDR
+			, PRIVATE_IP_ADDR
+			, SVC_PORT_NO
+			, SVC_IP_DOMAIN
+			, FOREWARD_SVR_ID
+			, BACKWARD_SVR_ID
+			, CPU_CORE
+			, MEMORY_SZ
+			, DEL_YN
+			, DATE_ADD(REG_DT, INTERVAL #{utcBaseDiffSec} SECOND) AS REG_DT
+            , REG_USER_ID
+            , DATE_ADD(UPDT_DT, INTERVAL #{utcBaseDiffSec} SECOND) AS UPDT_DT
+			, UPDT_USER_ID
+		FROM 
+			TB_COM_EAI_SVR_INFO
+		WHERE 
+			SVR_ID = #{svrId}
+			AND DEL_YN = 'N'	
+			AND SVR_TYPE_CD = 'E'
+			AND ZONE_TYPE_CD = 'LAN'
+	</select>	
+
+    <select id="selectServerResourceStatusHour" parameterType="java.util.Map" resultType="java.util.Map">
+		/* SqlId = TopologyResourceStatusDAO.selectServerResourceStatusHour */
+		SELECT 
+			CONCAT(DATE_FORMAT(A.YYYYMMDD, '%Y-%m-%d'), ' ', A.HH24, ':', A.MI ) AS UTC_DATE_TIME
+			,DATE_FORMAT(
+                DATE_ADD(STR_TO_DATE(CONCAT(A.YYYYMMDD, A.HH24, A.MI), '%Y%m%d%H%i'), INTERVAL #{utcBaseDiffSec} SECOND) 
+                , '%Y-%m-%d %H:%i') AS DATE_TIME   
+			, A.CPU_USED_PCT AS CPU_USED
+			, A.MEM_USED_PCT AS MEM_USED
+		FROM 
+			TB_ADM_SVR_RSRC_STATUS AS A 
+			INNER JOIN ( 
+						 SELECT 
+								DATE_ADD(MAX(INSERT_DT), INTERVAL -1 HOUR) AS FROM_DATE
+								, MAX(INSERT_DT) AS TO_DATE 
+						 FROM  TB_ADM_SVR_RSRC_STATUS 
+						 WHERE SVR_ID = #{serverId}
+						) AS B
+					ON A.INSERT_DT BETWEEN  B.FROM_DATE AND B.TO_DATE	 
+				   AND A.SVR_ID = #{serverId}	
+	</select>	
+
+    <select id="selectServerResourceStatusDay" parameterType="java.util.Map" resultType="java.util.Map">
+		/* SqlId = TopologyResourceStatusDAO.selectServerResourceStatusDay */
+		SELECT 
+			CONCAT(DATE_FORMAT(A.YYYYMMDD, '%Y-%m-%d'), ' ', A.HH24) AS UTC_DATE_TIME
+			,DATE_FORMAT(
+                DATE_ADD(STR_TO_DATE(CONCAT(A.YYYYMMDD, A.HH24), '%Y%m%d%H'), INTERVAL #{utcBaseDiffSec} SECOND) 
+                , '%Y-%m-%d %H') AS DATE_TIME
+			, A.CPU_AVG_USED_PCT AS CPU_USED
+			, A.MEM_AVG_USED_PCT AS MEM_USED
+		FROM 
+			TB_ADM_SVR_RSRC_HOUR_AVG AS A
+			INNER JOIN ( 
+						 SELECT 
+								DATE_ADD(MAX(INSERT_DT), INTERVAL -2  DAY) AS FROM_DATE
+								, MAX(INSERT_DT) AS TO_DATE 
+						 FROM  TB_ADM_SVR_RSRC_STATUS
+						 WHERE SVR_ID = #{serverId} 
+						) AS B
+					ON A.INSERT_DT BETWEEN  B.FROM_DATE AND B.TO_DATE	 
+				   AND A.SVR_ID = #{serverId}	
+	</select>	
+
+    <select id="selectServerResourceStatusMonth" parameterType="java.util.Map" resultType="java.util.Map">
+		/* SqlId = TopologyResourceStatusDAO.selectServerResourceStatusMonth */
+		SELECT 
+			DATE_FORMAT(A.YYYYMMDD, '%Y-%m-%d') AS UTC_DATE_TIME
+			,DATE_FORMAT(
+                DATE_ADD(STR_TO_DATE(A.YYYYMMDD, '%Y%m%d%H'), INTERVAL -32400 SECOND) 
+                , '%Y-%m-%d') AS DATE_TIME
+			, A.CPU_AVG_USED_PCT AS CPU_USED
+			, A.MEM_AVG_USED_PCT AS MEM_USED
+		FROM 
+			TB_ADM_SVR_RSRC_DAILY_AVG AS A 
+			INNER JOIN ( 
+						 SELECT 
+								DATE_ADD(MAX(INSERT_DT), INTERVAL -2  MONTH) AS FROM_DATE
+								, MAX(INSERT_DT) AS TO_DATE 
+						 FROM  TB_ADM_SVR_RSRC_STATUS
+						 WHERE SVR_ID = #{serverId} 
+						) AS B
+					ON A.INSERT_DT BETWEEN  B.FROM_DATE AND B.TO_DATE	 
+				   AND A.SVR_ID = #{serverId}	
+	</select>	
+
+	
+	<!-- ==================================================================================== -->
+    <!-- 2. Insert Statement -->
+    <!-- ==================================================================================== -->
+    
+    <!-- ==================================================================================== -->
+    <!-- 3. Update Statement -->
+    <!-- ==================================================================================== -->
+	
+	<!-- ==================================================================================== -->
+    <!-- 4. Delete Statement -->
+    <!-- ==================================================================================== -->
+
+</mapper>
