@@ -1,0 +1,1405 @@
+<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
+<%@ include file="/WEB-INF/views/web/common/layout/declare.jsp"%>
+
+<link rel="stylesheet" type="text/css" href="/static/css/joint/joint.css" />
+<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" />
+
+<script src="/static/js/eventsource/eventsource.js"></script>
+<%-- <script src="/static/js/jquery/jquery-3.4.1.min.js"></script> --%>
+<script src="/static/js/joint/lodash.js"></script>
+<script src="/static/js/joint/backbone.js"></script>
+<script src="/static/js/joint/joint.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+<style type="text/css">
+	.index_color1{background-color:#00ffcf} /* 인터페이스 정상 */
+	.index_color2{background-color:#ef00ff} /* 인터페이스 오류 */
+	.index_color3{background-color:#299a29} /* 아답터 정상 */
+	.index_color4{background-color:#fe2332} /* 아답터 오류 */
+</style>
+
+<script type="text/javascript">
+<%-- ====================================================================== --%>
+<%--                                                                        --%>
+<%--                            Document Ready                              --%>
+<%--                                                                        --%>
+<%-- ====================================================================== --%>
+$(document).ready(function(){
+
+	/* Topology용 graph, paper */
+	var graph = null;
+	var paper = null; 
+	
+	/* Add [Save] Button */
+	var saveButton = null;
+
+	/* 연계시스템 및 EAI 서버정보 조회 및 Topology 그리기 */
+	ajaxProcess('/monitoring/topology/equipments', {}, function(data){
+
+		// 각 Zone 별 Default Height
+		let defItzHtmlHeight = parseInt($(itzSelector).css("height"));
+		let defDmzHtmlHeight = parseInt($(dmzSelector).css("height"));
+		let defEaiHtmlHeight = parseInt($(eaiSelector).css("height"));
+		let defLanHtmlHeight = parseInt($(lanSelector).css("height"));
+		
+		// 각 Zone 별 시스템 개수	 
+		let countInfo = getEquipCountByZone(data); 
+
+		// ITZ Height 증가치 
+		let incHeightITZ = getIncreaseHeight(countInfo.itzCount, 7, 100, defItzHtmlHeight);
+		// DMZ Height 증가치 
+		let incHeightDMZ = getIncreaseHeight(countInfo.dmzCount, 6, 100, defDmzHtmlHeight);
+		// EAI Height 증가치 
+		let incHeightEAI = getIncreaseHeight(countInfo.eaiCount, 6, 100, defEaiHtmlHeight);
+		// LAN Height 증가치 
+		let incHeightLAN = getIncreaseHeight(countInfo.lanCount, 7, 100, defLanHtmlHeight);
+
+		// 각 Zone 별 Height
+		let itzHtmlHeight = (defItzHtmlHeight + incHeightITZ);
+		let dmzHtmlHeight = (defDmzHtmlHeight + incHeightDMZ);
+		let eaiHtmlHeight = (defEaiHtmlHeight + incHeightEAI);
+		let lanHtmlHeight = (defLanHtmlHeight + incHeightLAN);
+
+		// Paper Height
+		let paperHeight = itzHtmlHeight + dmzHtmlHeight + eaiHtmlHeight + lanHtmlHeight;
+
+		// Html 영역 각 Zone 별 Height 설정
+		$(itzSelector).css({"height":itzHtmlHeight});
+		$(dmzSelector).css({"height":dmzHtmlHeight});
+		$(eaiSelector).css({"height":eaiHtmlHeight});
+		$(lanSelector).css({"height":lanHtmlHeight});
+
+		let heightUpDown = 0;
+		if(itzHtmlHeight < 1){
+			$(itzSelector).attr("style", "display:none");
+			heightUpDown += incHeightITZ;
+		}
+		if(dmzHtmlHeight < 1){
+			$(dmzSelector).attr("style", "display:none");
+			heightUpDown += incHeightDMZ;
+		}
+		
+		/* graph, paper 생성 */
+		graph = new joint.dia.Graph();
+		paper = createPaper(graph, 'paper', 1458, paperHeight); // ITZ:170, DMZ:210, EAI:250, LAN:250 => Default:870 
+		
+		/* Add [Save] Button */
+		saveButton = createButton(graph, 1273, 19, 80, 30, '#2c53b0', '<spring:message code="button.text.0034" text="저장"/>', '#fff', 14, 'Nanum Gothic, sans-serif');
+
+		/* --------------------------------------------------------------------------- 
+		 * Topology 그리기 
+		 * --------------------------------------------------------------------------*/
+		drawTopolgy(graph, data, heightUpDown);  
+		
+		/* --------------------------------------------------------------------------- 
+		 * Topology Paper 영역 Event 
+		 * --------------------------------------------------------------------------*/
+		paper.on( {
+
+			'element:pointerdown' : function(elementView, evt) {
+			    var model = elementView.model;
+			    var modelType = model.attributes.type;
+			    if(modelType == 'standard.Rectangle'){ // Save button
+			    	console.log("Save Button Position : x:"+model.position().x + "\t y:"+ model.position().y);
+			    	savePositions(graph);
+				} else if(modelType == 'topology.Equipment') { // 연계시스템, L4, PROXY, EAI Server
+		 			toggoleEquipmentImage(model, graph);
+				} else {
+					console.log("do nothing...");
+				}
+			    evt.data = model.position();
+			 },
+			 
+			'element:pointerup' : function(elementView, evt, x, y) {
+				let modelType = elementView.model.attributes.type;
+				if(modelType == 'topology.Equipment') {
+					let desc = elementView.model.attr('.desc/text').split("|");
+					if(desc[0] === "ITZ"){
+					    if(parseInt($(itzSelector).css("height")) < (elementView.model.getBBox().bottomMiddle().y - 35)) {
+			                // Move the element to the position before dragging.
+			                elementView.model.position(evt.data.x, evt.data.y);			
+					    	$.messager.easyAlert("Can not move out of the ITZ Area");
+					    	return;
+						} 
+					} else if(desc[0] === "LAN"){
+					    if( (paperHeight - parseInt(($(lanSelector).css("height")))) > elementView.model.getBBox().topMiddle().y ) {
+			                // Move the element to the position before dragging.
+					    	elementView.model.position(evt.data.x, evt.data.y);
+					    	$.messager.easyAlert("Can not move out of the LAN Area");
+						    return;
+						} 
+					}
+				}
+			},
+
+			'link:mouseover' : function(linkView, evt) { 
+				appendLinkLabel(linkView);
+			},
+
+			'link:mouseout' : function(linkView, evt) { 
+				linkView.model.removeLabel(0);
+				linkView.model.attr('offsetLabelConnector/stroke', transparentColor);
+			},
+
+			'link:pointerclick' : function(linkView, evt) { 
+				let if_id = linkView.model.attr('.loginfo/interfaceid');
+				let tracking_id = linkView.model.attr('.loginfo/trackingid');
+				let route_id = linkView.model.attr('.loginfo/routeid');
+				let status = linkView.model.attr('.loginfo/status');
+				let datatime = linkView.model.attr('.loginfo/processtime');
+				let sender = linkView.model.attr('.loginfo/sender');
+				let receiver = linkView.model.attr('.loginfo/receiver');
+				let duration = linkView.model.attr('.loginfo/duration');
+				let req_data = linkView.model.attr('.loginfo/reqdata');
+				let res_data = linkView.model.attr('.loginfo/resdata');
+				let error = linkView.model.attr('.loginfo/error');
+				/* console.log("== Link Click Event => if_id:" + if_id 
+										+ "\t tracking_id:" + tracking_id 
+										   + "\t route_id:" + route_id
+										     + "\t status:" + status
+										   + "\t datatime:" + datatime
+										     + "\t sender:" + sender
+										   + "\t receiver:" + receiver
+										   + "\t duration:" + duration
+										   + "\t req_data:" + req_data
+										   + "\t res_data:" + res_data); */
+				if(if_id == "" || tracking_id =="" || route_id == "") {
+					$.messager.easyAlert("There is no Interface log data.");
+					return;
+				}
+				var obj = new Object();
+				obj.if_id = if_id;
+				obj.tracking_id = tracking_id;
+				obj.route_id = route_id;
+				obj.status = status;
+				obj.datatime = datatime;
+				obj.sender = sender;
+				obj.receiver = receiver;
+				obj.duration = duration;
+				obj.req_data = req_data;
+				obj.res_data = res_data;
+				obj.error = error;
+				dialogPop("<c:url value='/monitoring/topology/topologyInterfaceSelectLogPop'/>", $("#topologyInterfaceSelectLogPop"),obj);
+			}
+		} );		
+
+		/* --------------------------------------------------------------------------- 
+		 * Push Service
+		 * --------------------------------------------------------------------------*/
+		// 서버 리소스 상태 Push
+		var svrStsEventSource = requestPushService('Server Resource Status', '/push/svr_rsrc_status', function(data){
+			refreshServerStatus(graph, data.svrRsrcStus);
+		});
+		// 인터페이스 로그 Push 
+		if('${isServer}' === 'N'){
+			$.messager.easyAlert("The log push server information is not valid.\r\nAfter 10 seconds, refresh this page.");
+			//setTimeout(() => window.location.reload(), 10000); => Explorer에서 script구문오류가 발생해서 수정
+			setTimeout(function(){
+				window.location.reload()
+			}, 10000);
+		} else {
+
+			let interfaceLogPushURL = $(location).attr('protocol')+'//${serverIp}:${serverPort}/push/interface_log_push';
+			console.log("== InterfaceLogPush Request URL : =>"+interfaceLogPushURL); 
+			//interfaceLogPushURL = 'http://10.25.71.22:${serverPort}/push/interface_log_push'; // <- TODO : 삭제예정
+			var interfaceLogEventSource = requestPushService('Interface Log', interfaceLogPushURL, function(data){
+				updateLinks(graph, paper, data);
+			}, { withCredentials:true}) ;
+			
+		}
+		// 아답터 상태 Push
+		var adapterStsEventSource = requestPushService('Adapter Status', '/push/adapter_status', function(data){
+			refreshAdapterStatus(graph, data.adapterStus);
+		});
+	}); 
+	
+
+	/* --------------------------------------------------------------------------- 
+	 * Topology 좌측 아이콘 Click Event 
+	 * --------------------------------------------------------------------------*/
+	// 트랜잭션 팝업
+	$(".icon_trans2").on("click", function(){
+		console.log("트랜잭션 보기 클릭");
+		var zonetype = $("#hdnZoneTypeCd").val();
+		var svrType = $("#hdnSvrTypeCd").val();
+		var btn_zone = $(this).attr("id").substring(0,3).toUpperCase();
+		console.log("클릭한 버튼의 zone: " + btn_zone + "\t 선택한 서버의 Type: " + svrType);
+		if(zonetype != btn_zone) {
+			$.messager.easyAlert(getZoneSelectionMsg(btn_zone));
+			return;
+		}
+		var obj = new Object();
+		obj.id = $("#hdnServerId").val();
+		obj.zone = zonetype;
+		obj.svrType = svrType;
+		console.log(obj.id + "+" + obj.zone + "+" + obj.svrType);
+		dialogPop("<c:url value='/monitoring/topology/topologyInterfaceLogPop'/>", $("#topologyInterfaceLogPop"),obj);
+	});
+	// 인터넷,내부망 연계시스템 설정 팝업
+	$(".icon_setting2").on("click", function(){
+		var btn_zone = $(this).attr("id").substring(0,3).toUpperCase();
+		console.log(btn_zone +"영역 연계시스템 설정 팝업 클릭");
+		var params = {};
+		params["zoneTypeCd"] = btn_zone;
+		dialogPop("<c:url value='/monitoring/topology/settingInterfaceSystemPop'/>", $("#topologyInterfaceSystemPop"),params);
+	});
+	// 연계시스템 상세 정보 팝업
+	$("#itz_sysinfo, #lan_sysinfo").on("click", function(){
+		console.log("연계시스템 상세 보기 클릭");
+		var zonetype = $("#hdnZoneTypeCd").val();
+		var system_id = $("#hdnServerId").val();
+		var btn_zone = $(this).attr("id").substring(0,3).toUpperCase();
+		console.log("클릭한 버튼의 zone: " + btn_zone);
+		if(zonetype != btn_zone) {
+			$.messager.easyAlert(getZoneSelectionMsg(btn_zone));
+			return;
+		}
+		var obj = new Object();
+		obj.system_id = system_id;
+		console.log(obj.system_id);
+		dialogPop("<c:url value='/monitoring/topology/topologyInterfaceSysDetailPop'/>", $("#topologyInterfaceSysDetailPop"),obj);
+	});
+	// 서버 상세 정보 팝업
+	$("#dmz_svrinfo, #eai_svrinfo").on("click", function(){
+		console.log("서버 상세 보기 클릭");
+		var zonetype = $("#hdnZoneTypeCd").val();
+		var svrId = $("#hdnServerId").val();
+		var btn_zone = $(this).attr("id").substring(0,3).toUpperCase();
+		console.log("클릭한 버튼의 zone: " + btn_zone);
+		if(zonetype != btn_zone) {
+			$.messager.easyAlert(getZoneSelectionMsg(btn_zone));
+			return;
+		}
+		var obj = new Object();
+		obj.svrId = svrId;
+		console.log(obj.svrId);
+		dialogPop("<c:url value='/monitoring/topology/topologyInterfaceSvrDetailPop'/>", $("#topologyInterfaceSvrDetailPop"),obj);
+	});
+	// 선택한 연계시스템과 연관된 시스템의 정보팝업
+	$("#itz_related, #lan_related").on("click", function(){
+		console.log("관련시스템 상세 보기 클릭");
+		var zonetype = $("#hdnZoneTypeCd").val();
+		var system_id = $("#hdnServerId").val();
+		var btn_zone = $(this).attr("id").substring(0,3).toUpperCase();
+		console.log("클릭한 버튼의 zone: " + btn_zone);
+		if(zonetype != btn_zone) {
+			$.messager.easyAlert(getZoneSelectionMsg(btn_zone));
+			return;
+		}
+		var obj = new Object();
+		obj.systemId = system_id;
+		console.log(obj.systemId);
+		dialogPop("<c:url value='/monitoring/topology/topologyInterfaceRelatedSysDetailPop'/>", $("#topologyInterfaceRelatedSysDetailPop"),obj);
+	});
+	// 리소스현황 팝업
+	$("#server_resource_status").on("click", function(){
+		if($("#hdnZoneTypeCd").val() !== "EAI" || $("#hdnSvrTypeCd").val() !== "E") {
+			$.messager.easyAlert("Select EAI Server in EAI Area.");
+			return;
+		} 
+		var params = {};
+		params["serverId"] = $("#hdnServerId").val();
+		dialogPop("<c:url value='/monitoring/topology/serverResourceStatusPop'/>", $("#topologyServerResourceStatusPop"),params);
+	});	
+
+	
+	// TODO : 삭제 예정
+	let testClickCount = 0;
+	$("#main_modify > div.page_navigation > div > ul > li:nth-child(1)").on("click", function(){
+		// Test
+		//var successJsonLogData = '{"log":"테스트 LOG 1","if_id":"IF_CN_ERP_CXP_0020","sender":"CXP","receiver":"HQ-EAI","proxy":"xconn-proxy02","instance":"xconn-eai02","status":"S","isEaiError":"","datatime":"2020-02-21 17:35:25","duration":"0","req_data":"","res_data":{"T_DATA":[{"OTD_CODE":"CA10","C_STATUS":"","OTD_CODE_DESC":"SHIPPING","ACT_DATE":"20191009","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"CA10","C_STATUS":"","OTD_CODE_DESC":"SHIPPING","ACT_DATE":"20191009","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"CA20","C_STATUS":"","OTD_CODE_DESC":"PORTARRIVAL","ACT_DATE":"20191015","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"CA30","C_STATUS":"X","OTD_CODE_DESC":"CUSTOMSCLEARANCE","ACT_DATE":"20191021","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"DA10","C_STATUS":"","OTD_CODE_DESC":"COMPOUNDIN","ACT_DATE":"20191021","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"DA20","C_STATUS":"","OTD_CODE_DESC":"DELIVERYCENTERIN","ACT_DATE":"00000000","VHCLE":"0000000011","EST_DATE":"20191105"},{"OTD_CODE":"CA10","C_STATUS":"","OTD_CODE_DESC":"SHIPPING","ACT_DATE":"20191009","VHCLE":"0000000013","EST_DATE":"00000000"},{"OTD_CODE":"CA20","C_STATUS":"","OTD_CODE_DESC":"PORTARRIVAL","ACT_DATE":"20191018","VHCLE":"0000000013","EST_DATE":"00000000"}],"ifMsgCnt":2,"ifTotCnt":"7"},"tracking_id":"4bc68e26-f318-4812-ae29-ac1ea8ea4e33","route_id":"IF_CN_ERP_CXP_0020_v001"}';
+		//successJsonLogData = JSON.parse(successJsonLogData);
+		let successJsonLogData = {"log":"테스트 LOG","if_id":"IF_CN_ERP_CXP_0020","sender":"CXP","receiver":"HQ-EAI","proxy":"xconn-proxy01","instance":"xconn-eai01","status":"S","datatime":1584433570801,"duration":"1.0","req_data":"{\r\n  \"header\" : {\r\n    \"ifId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifVer\" : \"v001\",\r\n    \"ifSenderGrp\" : \"CN\",\r\n    \"ifSender\" : \"CXP\",\r\n    \"ifReceiverGrp\" : \"CN\",\r\n    \"ifReceiver\" : \"HQ-EAI\",\r\n    \"ifRouteId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifTrackingId\" : \"4bc68e26-f318-4812-ae29-ac1ea8ea4e33\",\r\n    \"ifDateTime\" : \"20191218055418\",\r\n    \"ifMsgCnt\" : 0\r\n  },\r\n  \"payload\" : {\r\n    \"T_DATA\" : [ {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"PORTARRIVAL\",\r\n      \"ACT_DATE\" : \"20191015\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA30\",\r\n      \"C_STATUS\" : \"X\",\r\n      \"OTD_CODE_DESC\" : \"CUSTOMSCLEARANCE\",\r\n      \"ACT_DATE\" : \"20191021\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"DA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"COMPOUNDIN\",\r\n      \"ACT_DATE\" : \"20191021\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"DA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"DELIVERYCENTERIN\",\r\n      \"ACT_DATE\" : \"00000000\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"20191105\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000013\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"PORTARRIVAL\",\r\n      \"ACT_DATE\" : \"20191018\",\r\n      \"VHCLE\" : \"0000000013\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    } ],\r\n    \"ifTotCnt\" : \"7\"\r\n  }\r\n}","res_data":"{\r\n  \"header\" : {\r\n    \"ifId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifVer\" : \"v001\",\r\n    \"ifSenderGrp\" : \"CN\",\r\n    \"ifSender\" : \"CXP\",\r\n    \"ifReceiverGrp\" : \"CN\",\r\n    \"ifReceiver\" : \"HQ-EAI\",\r\n    \"ifRouteId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifTrackingId\" : \"4bc68e26-f318-4812-ae29-ac1ea8ea4e33\",\r\n    \"ifDateTime\" : \"20191218055418\",\r\n    \"ifMsgCnt\" : 2,\r\n    \"ifResult\" : \"S\",\r\n    \"ifFailMsg\" : \"\"\r\n  },\r\n  \"payload\" : {\r\n    \"T_DATA\" : [ {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"PORTARRIVAL\",\r\n      \"ACT_DATE\" : \"20191015\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA30\",\r\n      \"C_STATUS\" : \"X\",\r\n      \"OTD_CODE_DESC\" : \"CUSTOMSCLEARANCE\",\r\n      \"ACT_DATE\" : \"20191021\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"DA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"COMPOUNDIN\",\r\n      \"ACT_DATE\" : \"20191021\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"DA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"DELIVERYCENTERIN\",\r\n      \"ACT_DATE\" : \"00000000\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"20191105\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000013\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"PORTARRIVAL\",\r\n      \"ACT_DATE\" : \"20191018\",\r\n      \"VHCLE\" : \"0000000013\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    } ],\r\n    \"ifMsgCnt\" : 2,\r\n    \"ifTotCnt\" : \"7\"\r\n  }\r\n}","tracking_id":"4bc68e26-f318-4812-ae29-ac1ea8ea4e33","route_id":"IF_CN_ERP_CXP_0020_v001","if_ver_no":"v001","isEaiError":"N"};
+		//var failJsonLogData = '{"log":"테스트 LOG 2","if_id":"IF_CN_ERP_CXP_0021","sender":"CXP","receiver":"BOM","proxy":"xconn-proxy01","instance":"xconn-eai01","status":"E","isEaiError":"Y","datatime":"2020-02-21 18:32:07","duration":"0","req_data":"","res_data":{"T_DATA":[{"OTD_CODE":"CA10","C_STATUS":"","OTD_CODE_DESC":"SHIPPING","ACT_DATE":"20191009","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"CA10","C_STATUS":"","OTD_CODE_DESC":"SHIPPING","ACT_DATE":"20191009","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"CA20","C_STATUS":"","OTD_CODE_DESC":"PORTARRIVAL","ACT_DATE":"20191015","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"CA30","C_STATUS":"X","OTD_CODE_DESC":"CUSTOMSCLEARANCE","ACT_DATE":"20191021","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"DA10","C_STATUS":"","OTD_CODE_DESC":"COMPOUNDIN","ACT_DATE":"20191021","VHCLE":"0000000011","EST_DATE":"00000000"},{"OTD_CODE":"DA20","C_STATUS":"","OTD_CODE_DESC":"DELIVERYCENTERIN","ACT_DATE":"00000000","VHCLE":"0000000011","EST_DATE":"20191105"},{"OTD_CODE":"CA10","C_STATUS":"","OTD_CODE_DESC":"SHIPPING","ACT_DATE":"20191009","VHCLE":"0000000013","EST_DATE":"00000000"},{"OTD_CODE":"CA20","C_STATUS":"","OTD_CODE_DESC":"PORTARRIVAL","ACT_DATE":"20191018","VHCLE":"0000000013","EST_DATE":"00000000"}],"ifMsgCnt":2,"ifTotCnt":"7"},"tracking_id":"4bc68e26-f318-4812-ae29-ac1ea8ea4e33","route_id":"IF_CN_ERP_CXP_0020_v001"}';
+		//failJsonLogData = JSON.parse(failJsonLogData);
+		let failJsonLogData = {"log":"테스트 LOG","if_id":"IF_CN_ERP_CXP_0020","sender":"CXP","receiver":"HQ-EAI","proxy":"xconn-proxy01","instance":"xconn-eai01","status":"E","datatime":1584437394623,"duration":"2.0","req_data":"{\r\n  \"header\" : {\r\n    \"ifId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifVer\" : \"v001\",\r\n    \"ifSenderGrp\" : \"KR\",\r\n    \"ifSender\" : \"CXP\",\r\n    \"ifReceiverGrp\" : \"CN\",\r\n    \"ifReceiver\" : \"HQ-EAI\",\r\n    \"ifRouteId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifTrackingId\" : \"abc68e26-f318-4812-ae29-ac1ea8ea4e33\",\r\n    \"ifDateTime\" : \"20191218055418\",\r\n    \"ifMsgCnt\" : 2\r\n  },\r\n  \"payload\" : {\r\n    \"T_DATA\" : [ {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"PORTARRIVAL\",\r\n      \"ACT_DATE\" : \"20191015\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA30\",\r\n      \"C_STATUS\" : \"X\",\r\n      \"OTD_CODE_DESC\" : \"CUSTOMSCLEARANCE\",\r\n      \"ACT_DATE\" : \"20191021\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"DA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"COMPOUNDIN\",\r\n      \"ACT_DATE\" : \"20191021\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"DA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"DELIVERYCENTERIN\",\r\n      \"ACT_DATE\" : \"00000000\",\r\n      \"VHCLE\" : \"0000000011\",\r\n      \"EST_DATE\" : \"20191105\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA10\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"SHIPPING\",\r\n      \"ACT_DATE\" : \"20191009\",\r\n      \"VHCLE\" : \"0000000013\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    }, {\r\n      \"OTD_CODE\" : \"CA20\",\r\n      \"C_STATUS\" : \"\",\r\n      \"OTD_CODE_DESC\" : \"PORTARRIVAL\",\r\n      \"ACT_DATE\" : \"20191018\",\r\n      \"VHCLE\" : \"0000000013\",\r\n      \"EST_DATE\" : \"00000000\"\r\n    } ],\r\n    \"ifTotCnt\" : \"7\"\r\n  }\r\n}","res_data":"{\r\n  \"header\" : {\r\n    \"ifId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifVer\" : \"v001\",\r\n    \"ifSenderGrp\" : \"KR\",\r\n    \"ifSender\" : \"CXP\",\r\n    \"ifReceiverGrp\" : \"CN\",\r\n    \"ifReceiver\" : \"HQ-EAI\",\r\n    \"ifRouteId\" : \"IF_CN_ERP_CXP_0020\",\r\n    \"ifTrackingId\" : \"abc68e26-f318-4812-ae29-ac1ea8ea4e33\",\r\n    \"ifDateTime\" : \"20191218055418\",\r\n    \"ifMsgCnt\" : 2,\r\n    \"ifResult\" : \"E\",\r\n    \"ifFailMsg\" : \"[X-Connector] - com.xconnect.eai.server.common.exception.XConnectEaiServerException: XConnectEaiServerException error!!\\r\\n\\tat com.xconnect.eai.server.service.XConnectServerRouter\\\\$4.process&#40;XConnectServerRouter.java:297&#41;\\r\\n\\tat org.apache.camel.processor.DelegateSyncProcessor.process&#40;DelegateSyncProcessor.java:63&#41;\\r\\n\\tat org.apache.camel.processor.RedeliveryErrorHandler.process&#40;RedeliveryErrorHandler.java:548&#41;\\r\\n\\tat org.apache.camel.processor.CamelInternalProcessor.process&#40;CamelInternalProcessor.java:201&#41;\\r\\n\\tat org.apache.camel.processor.Pipeline.process&#40;Pipeline.java:138&#41;\\r\\n\\tat org.apache.camel.processor.Pipeline.process&#40;Pipeline.java:101&#41;\\r\\n\\tat org.apache.camel.processor.CamelInternalProcessor.process&#40;CamelInternalProcessor.java:201&#41;\\r\\n\\tat org.apache.camel.component.direct.DirectProducer.process&#40;DirectProducer.java:76&#41;\\r\\n\\tat org.apache.camel.processor.RoutingSlip\\\\$RoutingSlipProcessor.process&#40;RoutingSlip.java:522&#41;\\r\\n\\tat org.apache.camel.processor.RedeliveryErrorHandler.process&#40;RedeliveryErrorHandler.java:548&#41;\\r\\n\\tat org.apache.camel.processor.RoutingSlip\\\\$3.doInAsyncProducer&#40;RoutingSlip.java:368&#41;\\r\\n\\tat org.apache.camel.impl.ProducerCache.doInAsyncProducer&#40;ProducerCache.java:445&#41;\\r\\n\\tat org.apache.camel.processor.RoutingSlip.processExchange&#40;RoutingSlip.java:355&#41;\\r\\n\\tat org.apache.camel.processor.RoutingSlip.doRoutingSlipWithExpression&#40;RoutingSlip.java:245&#41;\\r\\n\\tat org.apache.camel.processor.RoutingSlip.process&#40;RoutingSlip.java:176&#41;\\r\\n\\tat org.apache.camel.processor.RedeliveryErrorHandler.process&#40;RedeliveryErrorHandler.java:548&#41;\\r\\n\\tat org.apache.camel.processor.CamelInternalProcessor.process&#40;CamelInternalProcessor.java:201&#41;\\r\\n\\tat org.apache.camel.processor.Pipeline.process&#40;Pipeline.java:138&#41;\\r\\n\\tat org.apache.camel.processor.Pipeline.process&#40;Pipeline.java:101&#41;\\r\\n\\tat org.apache.camel.processor.CamelInternalProcessor.process&#40;CamelInternalProcessor.java:201&#41;\\r\\n\\tat org.apache.camel.component.jetty.CamelContinuationServlet.doService&#40;CamelContinuationServlet.java:220&#41;\\r\\n\\tat org.apache.camel.http.common.CamelServlet.service&#40;CamelServlet.java:79&#41;\\r\\n\\tat javax.servlet.http.HttpServlet.service&#40;HttpServlet.java:741&#41;\\r\\n\\tat org.eclipse.jetty.servlet.ServletHolder.handle&#40;ServletHolder.java:876&#41;\\r\\n\\tat org.eclipse.jetty.servlet.ServletHandler\\\\$CachedChain.doFilter&#40;ServletHandler.java:1623&#41;\\r\\n\\tat org.eclipse.jetty.servlets.MultiPartFilter.doFilter&#40;MultiPartFilter.java:150&#41;\\r\\n\\tat org.apache.camel.component.jetty.CamelFilterWrapper.doFilter&#40;CamelFilterWrapper.java:43&#41;\\r\\n\\tat org.eclipse.jetty.servlet.ServletHandler\\\\$CachedChain.do...","tracking_id":"abc68e26-f318-4812-ae29-ac1ea8ea4e33","route_id":"IF_CN_ERP_CXP_0020_v001","if_ver_no":"v001","isEaiError":"Y"};
+		let testdata = [];
+		testdata[0] = successJsonLogData;
+		testdata[1] = failJsonLogData;
+
+		updateLinks(graph, paper, testdata[++testClickCount%2]); 
+	});
+});
+<%-- ====================================================================== --%>
+<%--                                                                        --%>
+<%--                         // Document Ready                              --%>
+<%--                                                                        --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- 색상 정의                                                              --%>
+<%-- ====================================================================== --%>
+/* 투명한 색(TransparentColor) */
+const transparentColor = "rgba(255,255,255,0)";
+
+/* Link */
+const linkColorSucc = "#2db32d"; // 정상   
+const linkColorFail = "#f33232"; // 에러  
+const linkColorDeft = "#EAEAEA"; // Default  
+ 
+/* Link Tooltip */
+const tooltipLineColorSucc = "#2db32d";				// 정상 - 외곽선&연결선
+const tooltipBackColorSucc = "#f4f9ff";				// 정상 - 배경
+const tooltipLineColorFail = "#f33232";				// 에서 - 외곽선&연결선
+const tooltipBackColorFail = "#ffeff6";				// 에러 - 배경
+const tooltipLineColorDeft = "rgba(47,96,198,1)";	// Default - 외곽선&연결선
+const tooltipBackColorDeft = "#fffce5";				// Default - 배경
+
+/* EAI서버, I/F시스템 Outline - class 로 handling 
+---------------------------------------------------------------------
+.select_outline_fail{outline-color:#ef00ff; outline-style:double;}
+.select_outline_succ{outline-color:#00ffcf; outline-style:double;}
+.unselect_outline{outline-color:rgba(255,255,255,0);}
+---------------------------------------------------------------------
+const equipColorSucc = "#00ffcf"; // 정상 
+const equipColorFail = "#ef00ff"; // 에러 
+const equipColorDeft = transparentColor; // Default
+ */
+
+/* 아답터 상태 */
+const adapterColorSucc = "#299a29"; // 정상
+const adapterColorFail = "#fe2332"; // 에러
+const adapterColorDeft = "#cecece"; // Default
+ 
+/* EAI 서버 리소스 상태 */
+const svrRsrcColorLt = "#000000";		// 작음 - stable
+const svrRsrcColorGte = "#ef292a";		// 크거나같음 - warn
+const svrRsrcColorNoValue = "#b4b4b4";	// 값없음. - fatal  
+const svrRsrcColorDeft = "#000000";	// Default  
+
+/* 서버/연계시스템 Backgroud Color */
+const elmbackcolor = transparentColor;
+<%-- ====================================================================== --%>
+<%-- // 색상 정의                                                           --%>
+<%-- ====================================================================== --%>
+
+
+<%-- ====================================================================== --%>
+<%-- 토스트 메세지 옵션 정의                                                --%>
+<%-- ====================================================================== --%>
+/* Toast Message Option */
+toastr.options = {
+		"closeButton": true,
+		"debug": false,
+		"newestOnTop": false,
+		"progressBar": true,
+		"positionClass": "toast-bottom-right",
+		"preventDuplicates": false,
+		"onclick": null,
+		"showDuration": "300",
+		"hideDuration": "1000",
+		"timeOut": "5000",
+		"extendedTimeOut": "1000",
+		"showEasing": "swing",
+		"hideEasing": "linear",
+		"showMethod": "fadeIn",
+		"hideMethod": "fadeOut"
+};
+<%-- ====================================================================== --%>
+<%-- // 토스트 메세지 옵션 정의                                             --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- Zone 별 Selector                                                       --%>
+<%-- ====================================================================== --%>
+const itzSelector = ".wrap_topology > .block_topology:nth-last-of-type(4)";
+const dmzSelector = ".wrap_topology > .block_topology:nth-last-of-type(3)";
+const eaiSelector = ".wrap_topology > .block_topology:nth-last-of-type(2)";
+const lanSelector = ".wrap_topology > .block_topology:nth-last-of-type(1)";
+<%-- ====================================================================== --%>
+<%-- // Zone 별 Selector                                                    --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- Toplogy에 표현할 오브젝트 생성 함수 : Element, Link, Button, etc...    --%>
+<%-- ====================================================================== --%>
+function createPaper(graph, elmId, width, height) {
+	var paper = new joint.dia.Paper({
+	    el: $('#'+elmId),
+	    width: width,
+	    height: height,
+	    gridSize: 1,
+	    model: graph,
+	    perpendicularLinks: true,
+	    restrictTranslate: true,
+	    background: {
+	                color: transparentColor
+	    },
+	    interactive: function(cellView, method) {
+		    let model = cellView.model;
+	    	let modelType = model.attributes.type; // Only allow interaction with 'topology.Equipment' Element(Model).
+	    	if(modelType == 'topology.Equipment') {
+			    //console.log("Model Type : "+ modelType + "\t interactive:"+isEquipment);
+	    		let desc = model.attr('.desc/text').split("|");
+	    		if(desc[0] == 'ITZ' || desc[0] == 'LAN') {
+		    		return true;
+		    	}
+		    }
+	        return false;
+	    },
+	    clickThreshold: 5,
+	    defaultLink: new joint.shapes.topology.Arrow
+	});
+	return paper;
+}
+
+function createEquipment(graph, x, y, name, ip, port, protocol, status, cpusts, memsts, disksts, image, background, desc, textColor) {
+    textColor = textColor || "#000";
+    var cell = new joint.shapes.topology.Equipment({
+        position: { x: x, y: y },
+        attrs: {
+            '.card': { fill: background, stroke: '#dcdcdc', 'stroke-width': 0},
+              image: { 'xlink:href': '/static/images/'+ image, cursor: 'pointer' }, // , opacity: 0.7
+            '.name': { text: name, fill: textColor, 'font-size': 12, 'word-spacing': '-5px', 'letter-spacing': 0},
+            '.ip'  : { text: ip, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': 0},
+            '.port': { text: port, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': 0 },
+            '.status': { text: status, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': -4, cursor: 'pointer' }, // ■■■■■
+            '.protocol': { text: protocol, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': 0 },
+            '.cpusts': { text: cpusts, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': 0 },
+            '.memsts': { text: memsts, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': 0 },
+            '.disksts': { text: disksts, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': 0 },
+            '.desc': { text: desc, fill: textColor, 'font-size': 10, 'font-family': 'Nanum Gothic, sans-serif', 'letter-spacing': 0 }
+        }
+    });
+    graph.addCell(cell);
+    return cell;
+};
+
+function createLink(graph, source, target, breakpoints) {
+    //var cell = new joint.shapes.standard.Link({
+    var cell = new joint.shapes.topology.Arrow({
+        source: { id: source.id, selector:'image' },
+        target: { id: target.id, selector:'image' },
+        vertices: breakpoints,
+        router: { name: 'normal' }, // normal, orthogonal, manhattan, metro
+	});
+    cell.connector('jumpover', { size: 10 });
+    graph.addCell(cell);
+    return cell;
+}
+
+function createButton(graph, posX, posY, sizX, sizY, bdyColor, text, txtColor, fontSize, fontFamily){
+    var btn = new joint.shapes.standard.Rectangle();
+    btn.position(1273, 19);
+    btn.resize(80, 30);
+    btn.attr({
+        body: {
+            fill: bdyColor,
+            rx: 15,
+            ry: 15,
+            strokeWidth: 0,
+            cursor: 'pointer'
+        },
+        label: {
+            text: text,
+            fill: txtColor,
+            fontSize: fontSize,
+            fontFamily: fontFamily,
+            cursor: 'pointer'
+        }
+    });
+    graph.addCell(btn);
+}
+
+function appendLinkLabel(linkView){
+	let tmpStr = "";
+	if(linkView.model.attr('.loginfo/interfaceid') === "") {
+		tmpStr = "Not exist log data.";
+	} else {
+		tmpStr = linkView.model.attr('.loginfo/interfaceid')+ "\r\n\r\n"
+				 + linkView.model.attr('.loginfo/processtime') +"\r\n\r\n"
+				 + linkView.model.attr('.loginfo/status');
+	}
+
+	var linklogsts = linkView.model.attr('.loginfo/status');
+	var labelLineColor = tooltipLineColorDeft;
+	var labelBodyColor = tooltipBackColorDeft;
+	var labelTextColor = "black";
+	if("success" === linklogsts){
+		labelLineColor = tooltipLineColorSucc;
+		labelBodyColor = tooltipBackColorSucc;
+	}else if("fail" === linklogsts){
+		labelLineColor = tooltipLineColorFail;
+		labelBodyColor = tooltipBackColorFail;
+	}
+	linkView.model.label( 0, { 
+		attrs:{ 
+			text:{ 
+				text:tmpStr 
+			},
+			label:{
+				fill:labelTextColor
+			},
+			body:{
+				fill:labelBodyColor,
+				stroke:labelLineColor
+			} 
+		} 
+	});
+	linkView.model.attr('offsetLabelConnector/stroke', labelLineColor);
+}
+<%-- ====================================================================== --%>
+<%-- // Toplogy에 표현할 오브젝트 생성 함수 : Element, Link, Button, etc... --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- EAI 서버 및 연계 시스템 위치 저장                                      --%>
+<%-- ====================================================================== --%>
+function savePositions(graph) {
+	$.messager.easyConfirm("Do you want to save the interface system position on the topology?", function(yesno){
+		if(yesno){
+	    	//var posData = createPositionJsonData();
+	    	var posData = createPositionJsonData(graph);
+	    	ajaxProcess("/monitoring/topology/saveposition", posData, saveButtonCallBack);
+    	}
+    });
+}
+
+function createPositionJsonData(graph) {
+    jsonObj = [];
+    var allElements = graph.getElements();
+    $.each(allElements, function(idx, elm){
+    	if(elm.attributes.type == 'topology.Equipment' ) {
+	    	var desc = elm.attr('.desc/text').split("|");
+	    	//desc[0] -> ZoneTypeCd,  desc[1] -> SvrTypeCd, desc[2] -> Seq 
+    		if(desc[0] == 'ITZ' || desc[0] == 'LAN'){
+    			var item = {};
+    			item["id"] = elm.attr('.name/text');
+    			item["seq"] = desc[2];
+    			item["hpos"] = elm.position().x;
+    			item["vpos"] = elm.position().y;
+    			jsonObj.push(item);
+	    	}
+    	}
+    });
+    console.log(jsonObj);
+    return jsonObj;
+}   
+
+function saveButtonCallBack(result){
+    console.log("Success to save postion data...");
+    $.messager.easyAlert("Success to save postion data...");
+}
+<%-- ====================================================================== --%>
+<%-- // EAI 서버 및 연계 시스템 위치 저장                                   --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- 연계시스템, L4, PROXY, EAI Server 의 이미지 Active/Inactive            --%>
+<%-- ====================================================================== --%>
+function toggoleEquipmentImage(model, graph){
+    let imgPath = model.attr('image/xlink:href');
+    let chgImgPath = "";
+    let normal = ".png";
+    let hover = "_hover.png";
+    let off = "_off.png";
+    let circle = "circle.png";
+
+    if(imgPath.indexOf(off) > -1 || imgPath.indexOf(circle) > -1) {
+       console.log("do nothing...."); 
+       return;
+    } 
+
+    var desc = model.attr('.desc/text').split("|");
+    console.log("zone:"+desc[0]+"\t svrType:"+desc[1]+"\t seq:"+desc[2]);
+
+    if(imgPath.indexOf(hover) > -1) {
+        chgImgPath = replaceAll(imgPath, hover, normal);
+        $("#hdnServerId").val("");
+        $("#hdnZoneTypeCd").val("");
+        $("#hdnSvrTypeCd").val("");
+    } else {
+        chgImgPath = replaceAll(imgPath, normal, hover);
+        $("#hdnServerId").val(model.attr('.name/text'));
+        $("#hdnZoneTypeCd").val(desc[0]);
+        $("#hdnSvrTypeCd").val(desc[1]);
+    }
+
+    let allElements = graph.getElements();
+    $.each(allElements, function(idx, elm){
+    	if(elm.attributes.type == 'topology.Equipment') {
+	        let normalPath = replaceAll(elm.attr('image/xlink:href'), hover, normal);
+	        elm.attr('image/xlink:href', normalPath);        
+	    }
+    });
+    model.attr('image/xlink:href', chgImgPath);
+    console.log("x:"+model.position().x + "\t y:"+ model.position().y);
+    console.log("hdnZoneTypeCd:"+$("#hdnZoneTypeCd").val() + "\t hdnSvrTypeCd:"+ $("#hdnSvrTypeCd").val());
+}
+<%-- ====================================================================== --%>
+<%-- // 연계시스템, L4, PROXY, EAI Server 의 이미지 Active/Inactive         --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- Push Event별 Handler 함수                                              --%>
+<%-- ====================================================================== --%>
+// Push Log 정보로 Element, Link, Toast Message 관련 처리
+function updateLinks(graph, paper, jsonLogData){
+	console.log("로그푸쉬도착");
+	//console.log(jsonLogData);
+	//jsonLogData = JSON.parse(jsonLogData);
+	var allLinks = graph.getLinks();
+    $.each(allLinks, function(idx, elm){
+
+    	var linkView = paper.findViewByModel(elm);
+    	var sourceModel = linkView.sourceView.model;
+    	var targetModel = linkView.targetView.model;
+		var source_id = sourceModel.attr('.name/text'); 
+		var source_ds = sourceModel.attr('.desc/text').split("|"); 
+		var target_id = targetModel.attr('.name/text'); 
+		var target_ds = targetModel.attr('.desc/text').split("|"); 
+
+		//console.log("== Link Info => Source Id:"+source_id+"\tTarget Id:"+target_id);
+		//desc[0] -> ZoneTypeCd,  desc[1] -> SvrTypeCd, desc[2] -> Seq 
+		if(jsonLogData.status === "S") {
+			//if(jsonLogData.receiver === source_id) {
+			//	$("#"+linkView.sourceView.id+" image").attr('class','select_outline_succ');
+			//	//console.log("== "+targetId+" SUCCESS START:"+new Date());
+			//	//$("#"+linkView.sourceView.id+" image").switchClass("select_outline_succ", "unselect_outline", 3000, function(){console.log("== "+jsonLogData.receiver+" SUCCESS END:"+new Date())});
+			//}
+			if(jsonLogData.receiver === target_id) {
+				$("#"+linkView.targetView.id+" image").attr('class','select_outline_succ');
+				//console.log("== "+targetId+" SUCCESS START:"+new Date());
+				//$("#"+linkView.targetView.id+" image").switchClass("select_outline_succ", "unselect_outline", 3000, function(){console.log("== "+jsonLogData.receiver+" SUCCESS END:"+new Date())});
+				if($("input[name='toastMsgRadio']:checked").val() === "all"){
+					toastr["success"]( " "+jsonLogData.receiver +"<br> "+jsonLogData.if_id +"<br> "+getFormattedDate(jsonLogData.datatime), "[ Interface Success ]");
+				}
+			}
+		} else {
+			// isEaiError => Y: eai->instance, N: ifsys->receiver
+			var targetId = "";
+			if(jsonLogData.isEaiError === "Y") {
+				targetId = jsonLogData.instance;
+			} else {
+				targetId = jsonLogData.receiver;
+			}
+			if(targetId === source_id) {
+				$("#"+linkView.sourceView.id+" image").attr('class','select_outline_fail');
+				console.log("== "+targetId+" FAIL START:"+new Date());
+				if(jsonLogData.isEaiError === "Y") {
+					$("#"+linkView.sourceView.id+" image").switchClass("select_outline_fail", "unselect_outline", 3000, function(){console.log("== "+targetId+" FAIL END:"+new Date())});
+				}
+			}
+			if(targetId === target_id) {
+				$("#"+linkView.targetView.id+" image").attr('class','select_outline_fail');
+				console.log("== "+targetId+" FAIL START:"+new Date());
+				if(jsonLogData.isEaiError === "Y") {
+					$("#"+linkView.targetView.id+" image").switchClass("select_outline_fail", "unselect_outline", 3000, function(){console.log("== "+targetId+" FAIL END:"+new Date())});
+				}
+				toastr["error"]( " "+targetId +"<br> "+jsonLogData.if_id +"<br> "+getFormattedDate(jsonLogData.datatime), "[ Interface Error ]");
+			}
+		}
+
+		// 연계시스템(인터넷) -> DMZ L4
+		if(jsonLogData.sender === source_id 
+				&& jsonLogData.proxy !== null && jsonLogData.proxy !== ""
+				&& target_ds[0] === "DMZ" && target_ds[1] === "L"){
+			setLogInfoToLink(linkView, jsonLogData);
+		}
+		// DMZ L4 -> DMZ Proxy 01
+		// DMZ L4 -> DMZ Proxy 02
+		if(source_ds[0] === "DMZ" && source_ds[1] === "L"
+				&& jsonLogData.proxy === target_id){
+			setLogInfoToLink(linkView, jsonLogData);
+		}
+		// DMZ Proxy 01 -> EAI L4
+		// DMZ Proxy 02 -> EAI L4
+		if(jsonLogData.proxy === source_id 
+				&& jsonLogData.instance !== null && jsonLogData.instance !== ""
+				&& target_ds[0] === "EAI" && target_ds[1] === "L"){ 
+			setLogInfoToLink(linkView, jsonLogData);
+		}
+		// EAI L4 -> EAI 01
+		// EAI L4 -> EAI 02
+		// EAI L4 -> EAI 03
+		if(source_ds[0] === "EAI" && source_ds[1] === "L"
+				&& jsonLogData.instance === target_id){
+			setLogInfoToLink(linkView, jsonLogData);
+		}
+		// EAI 01 -> circle
+		// EAI 02 -> circle
+		// EAI 03 -> circle
+		if(jsonLogData.instance === source_id
+				&& jsonLogData.receiver !== null && jsonLogData.receiver !== ""
+				&& target_ds[0] === "null" && target_ds[1] === "null"){
+			setLogInfoToLink(linkView, jsonLogData);
+		}
+		// circle -> 연계시스템(내부망) 
+		if(source_ds[0] === "null" && source_ds[1] === "null"
+			&& jsonLogData.receiver === target_id){
+			setLogInfoToLink(linkView, jsonLogData);
+		}
+	});
+}
+function setLogInfoToLink(link, jsonLogData){
+	link.model.attr('.loginfo/interfaceid', jsonLogData.if_id);
+	link.model.attr('.loginfo/trackingid', jsonLogData.tracking_id);
+	link.model.attr('.loginfo/routeid', jsonLogData.route_id);
+	link.model.attr('.loginfo/status', jsonLogData.status === "S" ? "success" : "fail");
+	link.model.attr('.loginfo/processtime', getFormattedDate(jsonLogData.datatime));
+	link.model.attr('.loginfo/sender', jsonLogData.sender);
+	link.model.attr('.loginfo/receiver', jsonLogData.receiver);
+	link.model.attr('.loginfo/duration', jsonLogData.duration);
+	link.model.attr('.loginfo/reqdata', jsonLogData.req_data);
+	link.model.attr('.loginfo/resdata', jsonLogData.res_data);
+	link.model.attr('.loginfo/error', jsonLogData.error);
+
+	link.model.attr('line/stroke', jsonLogData.status === "S" ? linkColorSucc : (jsonLogData.status === "E" ? linkColorFail : linkColorDeft) );		
+}
+
+// 서버 리소스 상태 Push 데이타 처리
+function refreshServerStatus(graph, stauslist) {
+    console.log("서버상태푸쉬도착");
+	var allElements = graph.getElements();
+    $.each(allElements, function(idx, elm){
+    	if(elm.attributes.type == 'topology.Equipment' ) {
+	    	var desc = elm.attr('.desc/text').split("|");
+	    	//desc[0] -> ZoneTypeCd,  desc[1] -> SvrTypeCd, desc[2] -> Seq 
+    		if(desc[0] == 'EAI' && desc[1] == 'E'){
+    			$.each(stauslist, function(idx, svrsts){
+    				if(elm.attr('.name/text') == svrsts.server_id) {
+		    	 		elm.attr('.cpusts/fill',getColor(svrsts.cpu_status));
+		    	 		elm.attr('.memsts/fill', getColor(svrsts.memory_status));
+		    	 		elm.attr('.disksts/fill', getColor(svrsts.disk_status));
+	    			}
+    			});
+	    	}
+    	}
+    });
+}
+function getColor(status){
+	if(status === "stable"){
+		return svrRsrcColorLt;
+	} else if(status === "warn"){
+		return svrRsrcColorGte;
+	} else if(status === "fatal"){
+		return svrRsrcColorNoValue;
+	} else {
+		return svrRsrcColorDeft;
+	}
+}
+
+// 아답터 상태 Push 데이타 처리
+function refreshAdapterStatus(graph, adapterlist) {
+	console.log("어댑터상태 푸쉬 도착");
+	//console.log("Adapter Status Response. =>"+JSON.stringify(adapterlist));
+    var allElements = graph.getElements();
+    $.each(allElements, function(idx, elm){
+       	if(elm.attributes.type == 'topology.Equipment' ) {
+       		var desc = elm.attr('.desc/text').split("|");
+	    	//desc[0] -> ZoneTypeCd,  desc[1] -> SvrTypeCd, desc[2] -> Seq 
+    		if(desc[0] == 'ITZ' || desc[0] == 'LAN'){
+    			elm.attr('.status/fill', adapterColorDeft); 
+    			$.each(adapterlist, function(idx, adaptersts){
+    				if(elm.attr('.name/text') == adaptersts.SYSTEM_ID) {
+		    	 		elm.attr('.status/fill'
+				    	 		,adaptersts.ADAPTER_STAT_CD === "A"
+					    	 		? adapterColorSucc : 
+						    	 		(adaptersts.ADAPTER_STAT_CD === "E" 
+							    	 		? adapterColorFail : adapterColorDeft) );
+	    			}
+    			});
+	    	}
+        }
+    });
+}
+<%-- ====================================================================== --%>
+<%-- // Push Event별 Handler 함수                                           --%>
+<%-- ====================================================================== --%>
+
+
+
+/*
+ * Topology 화면 => DMZ 의 Proxy 와 EAI존의 EAI Server 가 동적으로 그려지도록 변경.
+ * (주) DMZ 와 EAI 존의 L4는 각 1대씩으로 동적 생성 대상 불가	
+ */
+<%-- ====================================================================== --%>
+<%-- Element, Link 그리기                                                   --%>
+<%-- ====================================================================== --%>
+function drawTopolgy(graph, data, incHeightITZ){
+	
+	<%-- ============================= --%>
+	<%-- LAN 영역 Dummy Element 그리기 --%>
+	<%-- ============================= --%>
+	var circleVpos = 650 + incHeightITZ;
+	var circle = createEquipment(graph, 705, circleVpos, '', '', '', '', '', '', '', '', 'circle.png', elmbackcolor, "null|null|null");
+	<%-- ============== --%>
+	<%-- Element 그리기 --%>
+	<%-- ============== --%>
+	<%-- EAI 서버(L4, Proxy, Server) --%>
+	var dmzL4 = [];
+	var dmzProxy = [];
+	var eaiL4 = [];
+	var eaiServer = [];
+	var proxyCnt = 0, eaiSvrCnt = 0;
+	$.each(data.eaiServerInfos, function(idx, elm){
+		//console.log(idx +"==>>"+JSON.stringify(elm));
+		var imgPath = "";
+		var name = elm.id;
+		var cpuSts = "";
+		var memSts = "";
+		var diskSts = "";
+		if(elm.svrType == "L") {
+			imgPath = "to_icon_l4_40.png";
+		} else if(elm.svrType == "P") {
+			imgPath = "to_icon_proxy_40.png";
+		} else if(elm.svrType == "E"){
+			imgPath = "to_icon_eai_40.png";
+			cpuSts = "CPU ●";
+			memSts = "MEM ●";
+			diskSts = "DISK ●";
+			if( (elm.ip == null || elm.ip == "" )
+					&& (elm.port == null || elm.port == "" ) 
+					&& (elm.protocol == null || elm.protocol == "" )) {
+				name = "Not Ready";
+				imgPath = "to_icon_eai_40_off.png";
+				cpuSts = "";
+				memSts = "";
+				diskSts = "";
+			} 
+		}
+
+		var tmpvpos = elm.vpos + incHeightITZ;
+		if(elm.zone === "DMZ" && elm.svrType === "L") {
+			dmzL4[0] = createEquipment(graph, elm.hpos, tmpvpos, name, elm.ip , elm.port , elm.protocol, "", cpuSts, memSts, diskSts, imgPath, elmbackcolor, elm.zone+"|"+elm.svrType+"|"+elm.seq);
+		} else if(elm.zone === "DMZ" && elm.svrType === "P") {
+			dmzProxy[proxyCnt++] = createEquipment(graph, elm.hpos, tmpvpos, name, elm.ip , elm.port , elm.protocol, "", cpuSts, memSts, diskSts, imgPath, elmbackcolor, elm.zone+"|"+elm.svrType+"|"+elm.seq);
+		} else if(elm.zone === "EAI" && elm.svrType === "L") {
+			eaiL4[0] = createEquipment(graph, elm.hpos, tmpvpos, name, elm.ip , elm.port , elm.protocol, "", cpuSts, memSts, diskSts, imgPath, elmbackcolor, elm.zone+"|"+elm.svrType+"|"+elm.seq);
+		} else if(elm.zone === "EAI" && elm.svrType === "E") {
+			eaiServer[eaiSvrCnt++] = createEquipment(graph, elm.hpos, tmpvpos, name, elm.ip , elm.port , elm.protocol, "", cpuSts, memSts, diskSts, imgPath, elmbackcolor, elm.zone+"|"+elm.svrType+"|"+elm.seq);
+		} 
+	});
+	<%-- 연계시스템 --%>
+	var itzSys = [];
+	var lanSys = [];
+	var itzCnt = 0, lanCnt = 0;		
+	$.each(data.ifSystemInfos, function(idx, elm){
+		//console.log(idx +"==>>"+JSON.stringify(elm));
+		var tmpvpos = elm.vpos;
+		if("MAST" === elm.attr || ("USER" === elm.attr && "Y" === elm.syspos)){
+			if(elm.zone === "ITZ") {
+				// do nothing... 
+			} else if(elm.zone === "LAN") {
+				tmpvpos = tmpvpos + incHeightITZ; 
+			} 
+		}
+			
+		if(elm.zone == "ITZ"){
+			itzSys[itzCnt++] = createEquipment(graph, elm.hpos, tmpvpos, elm.id, elm.ip , elm.port , elm.protocol, "■■■■■", "", "", "", "to_icon_system_40.png", elmbackcolor, elm.zone+"|"+elm.svrType+"|"+elm.seq);
+		} else if(elm.zone == "LAN"){
+			lanSys[lanCnt++] = createEquipment(graph, elm.hpos, tmpvpos, elm.id, elm.ip , elm.port , elm.protocol, "■■■■■", "", "", "", "to_icon_system_40.png", elmbackcolor, elm.zone+"|"+elm.svrType+"|"+elm.seq);
+		}
+	});
+
+	<%-- =========== --%>
+	<%-- Link 그리기 --%>
+	<%-- =========== --%>
+	$.each(dmzProxy, function(idx, pxy){
+		<%-- DMZ L4 -> DMZ Proxy --%>
+		createLink(graph, dmzL4[0], pxy, []);
+		<%-- DMZ Proxy -> EAI L4 --%>
+		createLink(graph, pxy, eaiL4[0], []);
+	});
+	$.each(eaiServer, function(idx, svr){
+		if(eaiL4.length > 0){
+			<%-- EAI L4 -> EAI Server --%>
+			createLink(graph, eaiL4[0], svr, []);
+		}
+		<%-- EAI Server -> Circle --%>
+		createLink(graph, svr, circle, []);
+	});
+	<%-- ITZ 연계시스템 -> DMZ L4 --%>
+	$.each(itzSys, function(idx, isys){
+		if(dmzL4.length > 0){
+			createLink(graph, isys, dmzL4[0], []);
+		} else if(eaiL4.length > 0){
+			createLink(graph, isys, eaiL4[0], []);
+		}
+	});
+	<%-- Circle -> LAN 연계시스템 --%>
+	$.each(lanSys, function(idx, lsys){
+		createLink(graph, circle, lsys, []);
+	});
+
+	// 아답터상태 초기화
+	initIfSystemAdapterStatusColor(graph, data.ifSystemInfos);
+}
+<%-- ====================================================================== --%>
+<%-- // Element, Link 그리기                                                --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- Server Sent Event 관련 함수                                            --%>
+<%-- ====================================================================== --%>
+function requestPushService(evtType, reqUrl, handlerFunc, option){
+
+	var evtSource = null;
+	if(window.EventSource == null) {
+		//alert('This browser does not support SSE');
+		evtSource = new EventSourcePolyfill(reqUrl, option);
+	} else {
+		evtSource = new EventSource(reqUrl, option);
+	}
+	evtSource.onopen = function() {
+		console.log(evtType + ' - connection is established');
+	};
+	evtSource.onerror = function(err) {
+		console.log(evtType + ' - connection state : ' + this.readyState + ', error : ' + JSON.stringify(err));
+		evtSource.close();
+	};
+	evtSource.onmessage = function(event) {
+		if(event.data.endsWith('sessionExpired')) {
+			evtSource.close();
+			console.log(evtType + '  - connection is closed');
+		}else{
+			//$('#log_message').append(event.data);
+			var jsondata = JSON.parse(event.data);
+			handlerFunc(jsondata);
+		}
+	};
+	return evtSource;
+}
+function disconnectPushService(eventType, eventSource){
+	if(eventSource != undefined && typeof(eventSource) == "object") {
+		eventSource.close();
+		console.log(eventType + " - connection is closed.");
+	} else {
+		console.log(eventType + " - connection is invalid.");
+	}				
+}
+<%-- ====================================================================== --%>
+<%-- // Server Sent Event 관련 함수                                         --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%-- ETC...                                                                 --%>
+<%-- ====================================================================== --%>
+function replaceAll(str, srchStr, replStr) {
+	//console.log("str:"+str+"\t srchStr:"+srchStr+"\t replStr:"+replStr);
+    return str.split(srchStr).join(replStr);
+}
+
+function initIfSystemAdapterStatusColor(graph, ifSystemInfos){
+	//console.log("Init load If system. =>"+JSON.stringify(ifSystemInfos));
+    var allElements = graph.getElements();
+    $.each(allElements, function(idx, elm){
+       	if(elm.attributes.type == 'topology.Equipment' ) {
+       		var desc = elm.attr('.desc/text').split("|");
+	    	//desc[0] -> ZoneTypeCd,  desc[1] -> SvrTypeCd, desc[2] -> Seq 
+    		if(desc[0] == 'ITZ' || desc[0] == 'LAN'){
+    			elm.attr('.status/fill', adapterColorDeft); 
+    			$.each(ifSystemInfos, function(idx, ifsystem){
+    				if(elm.attr('.name/text') == ifsystem.id) {
+		    	 		elm.attr('.status/fill',ifsystem.adapterStatCd === "A" ? adapterColorSucc : (ifsystem.adapterStatCd === "E" ? adapterColorFail : adapterColorDeft) );
+	    			}
+    			});
+	    	}
+        }
+    });
+}
+
+function getEquipCountByZone(data){
+	let itzCnt = 0;
+	let lanCnt = 0;
+	$.each(data.ifSystemInfos, function(idx, elm){
+		if(elm.zone == "ITZ"){
+			++itzCnt;
+		} else if(elm.zone == "LAN"){
+			++lanCnt;
+		}
+	});
+	let dmzCnt = 0;
+	let eaiCnt = 0;
+	$.each(data.eaiServerInfos, function(idx, elm){
+		if(elm.zone == "DMZ"){
+			++dmzCnt;
+		} else if(elm.zone == "EAI"){
+			++eaiCnt;
+		}
+	});
+	return {itzCount:itzCnt, lanCount:lanCnt, dmzCount:dmzCnt, eaiCount:eaiCnt};	
+}
+
+function getIncreaseHeight(systemCount, countPerRow, heightUnit, defaultHeight) {
+	let tmpCnt = systemCount / countPerRow;
+	let intTmpCnt = parseInt(tmpCnt);
+	let rstRowCnt = 0;
+	if(tmpCnt > intTmpCnt) {
+		rstRowCnt = intTmpCnt + 1;
+    } else {
+    	rstRowCnt = intTmpCnt;
+    }
+
+//	console.log("Total Row Count:"+rstCnt+"\t Increase Row Count:"+(rstCnt-1)+"\t Increase Height:"+(rstCnt-1)*heightUnit);
+//	return (rstCnt - 1) * heightUnit;
+
+    
+	let incRowCnt = 0;
+	let rstHeight = 0;
+	if(rstRowCnt > 0) {
+		incRowCnt = rstRowCnt-1;
+		rstHeight = incRowCnt * heightUnit;
+	} else {
+		rstHeight = -(defaultHeight);
+	}    
+	console.log("Total Row Count:"+rstRowCnt+"\t Increase Row Count:"+incRowCnt+"\t Increase Height:"+rstHeight);
+	return rstHeight;
+}
+
+function getFormattedDate(longDate) {
+	/* YYYY-MM-DD hh:mm:ss */ 
+	var d = new Date(longDate);
+	var s = paddingLeftZero(d.getFullYear(), 4) + '-' +
+			paddingLeftZero(d.getMonth() + 1, 2) + '-' +
+			paddingLeftZero(d.getDate(), 2) + ' ' +
+			paddingLeftZero(d.getHours(), 2) + ':' +
+			paddingLeftZero(d.getMinutes(), 2) + ':' +
+			paddingLeftZero(d.getSeconds(), 2);
+	return s;
+}
+
+function paddingLeftZero(num, digits) {
+	return num.length >= digits ? num : new Array(digits - num.toString().length + 1).join('0') + num;
+}
+
+function getZoneSelectionMsg(trgZone) {
+	let msg = '';
+	if(trgZone === 'ITZ') msg = 'Select External Interface System in Internet Area.'; 
+	else if(trgZone === 'DMZ') msg = 'Select L4 or Proxy Server in DMZ Area.';
+	else if(trgZone === 'EAI') msg = 'Select L4 or EAI Server in EAI Area.';
+	else if(trgZone === 'LAN') msg = 'Select Internal Interface System in LAN Area.';
+	else msg = 'Invalid Zone Type.';
+	return msg; 	
+}
+<%-- ====================================================================== --%>
+<%-- // ETC...                                                              --%>
+<%-- ====================================================================== --%>
+
+
+
+<%-- ====================================================================== --%>
+<%--                                                                        --%>
+<%--                        Topology Element, Link 정의                     --%>
+<%--                                                                        --%>
+<%-- ====================================================================== --%>
+var Equipment = joint.dia.Element.define('topology.Equipment', {
+    size: { width: 180, height: 100 },
+    attrs: {
+        rect: { width: 170, height: 90 },
+
+        '.card': {
+            fill: 'rgba(255, 255, 255, 0)', stroke: '#000000', 'stroke-width': 2,
+            'pointer-events': 'none', rx: 10, ry: 10 // 'pointer-events': 'visiblePainted'
+        },
+
+        image: {
+            //event: 'element:image:pointerdown',
+            //event: 'element:pointerdblclick',
+            //events: { dblclick : 'element:image:pointerdblclick',},
+            width: 40, height: 40,
+            ref: '.card', 'ref-x': 5, 'ref-y': 5
+        },
+        
+        '.name': {
+            //'text-decoration': 'underline',
+            'font-weight': '1000',
+            ref: '.card', 'ref-x': 0.3, 'ref-y': 0.05,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 12,
+            'text-anchor': 'start', 'pointer-events': 'none'
+        },
+
+        '.ip': {
+            //'font-weight': '800',
+            ref: '.card', 'ref-x': 0.3, 'ref-y': 0.2,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+            'text-anchor': 'start', 'pointer-events': 'none'
+        },
+
+        '.port': {
+            //'font-weight': '800',
+            ref: '.card', 'ref-x': 0.3, 'ref-y': 0.35,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+            'text-anchor': 'start', 'pointer-events': 'none'
+        },
+
+        '.status': {
+            //'font-weight': '800',
+            ref: '.card', 'ref-x': 0.06, 'ref-y': 0.52,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+            'text-anchor': 'start', 'pointer-events': 'fill'
+        },
+
+        '.protocol': {
+        	//'font-weight': '800',
+        	ref: '.card', 'ref-x': 0.3, 'ref-y': 0.5,
+        	'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+        	'text-anchor': 'start', 'pointer-events': 'none'
+        },
+        
+        '.cpusts': {
+            //'font-weight': '800',
+            ref: '.card', 'ref-x': 0.3, 'ref-y': 0.65,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+            'text-anchor': 'start', 'pointer-events': 'none'
+        },
+
+        '.memsts': {
+            //'font-weight': '800',
+            ref: '.card', 'ref-x': 0.3, 'ref-y': 0.8,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+            'text-anchor': 'start', 'pointer-events': 'none'
+        },
+
+        '.disksts': {
+            //'font-weight': '800',
+            ref: '.card', 'ref-x': 0.3, 'ref-y': 0.95,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+            'text-anchor': 'start', 'pointer-events': 'none'
+        },
+        '.desc': {
+            ref: '.card', 'ref-x': 0.3, 'ref-y': 0.99,
+            'font-family': 'Nanum Gothic, sans-serif', 'font-size': 9,
+            'text-anchor': 'start',
+            'style': 'display:none'
+        },
+    }
+}, {
+    markup: '<g class="rotatable"><g class="scalable"><rect class="card"/><image/></g><text class="name"/><text class="ip"/><text class="port"/><text class="status"/><text class="protocol"/><text class="cpusts"/><text class="memsts"/><text class="disksts"/><text class="desc"/></g>',
+});
+
+var equipLink = joint.dia.Link.define('topology.Arrow', 
+	{
+        attrs: {
+            line: {
+                connection: true,
+                stroke: '#8C8C8C',
+                strokeWidth: 1,
+                strokeLinejoin: 'round',
+                targetMarker: 'normal'
+            },
+            wrapper: {
+                connection: true,
+                strokeWidth: 10,
+                strokeLinejoin: 'round'
+            },
+            '.loginfo' : {
+            	'status' : '',
+            	'processtime' : '',
+            	'interfaceid' : '',
+            	'trackingid' : '',
+            	'routeid' : '',
+            	'sender' : '',
+            	'receiver' : '',
+            	'duration' : '',
+            	'reqdata' : '',
+            	'resdata' : '',
+            	'error' : ''
+            },
+            offsetLabelConnector: {
+                atConnectionRatio: 0.5,
+                d: 'M 0 0 0 100',
+                stroke: 'rgba(255,255,255,0)',
+                strokeDasharray: '2 2'
+            }
+        }
+		, 
+		defaultLabel: {
+            markup: [
+                {
+                    tagName: 'rect',
+                    selector: 'body'
+                }, {
+                    tagName: 'text',
+                    selector: 'label'
+                }
+            ],
+            attrs: {
+                label: {
+                    fill: 'black', // default text color
+                    fontSize: 12,
+                    textAnchor: 'middle',
+                    yAlignment: 'middle',
+                    pointerEvents: 'none'
+                },
+                body: {
+                    ref: 'label',
+                    fill: 'white',
+                    stroke: 'cornflowerblue',//'cornflowerblue',
+                    strokeWidth: 1,
+                    refWidth: '120%',
+                    refHeight: '120%',
+                    refX: '-10%',
+                    refY: '-10%'
+                }
+            },
+            position: {
+                //distance: 100, // default absolute position
+                distance: 0.5, // default absolute position
+                offset:100,
+                args: {
+                    absoluteDistance: true
+                }
+            }
+        }
+    },
+    {
+        markup: [{
+            tagName: 'path',
+            selector: 'wrapper',
+            attributes: {
+                'fill': 'none',
+                'cursor': 'pointer',
+                'stroke': 'transparent',
+                'stroke-linecap': 'round'
+            }
+        }, {
+            tagName: 'path',
+            selector: 'line',
+            attributes: {
+                'fill': 'none',
+                'pointer-events': 'none'
+            }
+        }, {
+        	tagName: 'path',
+        	selector: 'connection-wrap',
+        	attributes: {
+        		fill: 'black',
+        		stroke: 'black',
+        	}
+        },
+        {
+            tagName: 'path',
+            selector: 'offsetLabelConnector'
+        }]
+    }
+);
+<%-- ====================================================================== --%>
+<%--                                                                        --%>
+<%--                     // Topology Element, Link 정의                     --%>
+<%--                                                                        --%>
+<%-- ====================================================================== --%>
+//# sourceURL=topology.js	
+</script>
+
+
+		<input type="hidden" id="hdnServerId" name="hdnServerId" value=""/>     <%-- 연계시스템아이디 또는 EAI서버아이디 --%>
+		<input type="hidden" id="hdnZoneTypeCd" name="hdnZoneTypeCd" value=""/> <%-- 인터넷:ITZ, DMZ:DMZ, EAI:EAI, 내부망:LAN  --%>
+		<input type="hidden" id="hdnSvrTypeCd" name="hdnSvrTypeCd" value=""/>   <%-- 인터넷/내부망 서버타입:null, DMZ서버타입:L/P, EAI서버타입:L/E  --%>
+        <!-- 내용 부분 -->
+        <!-- 
+            block_topology의 height는 1~2 번까지는 498px, 세번째의 height는 650px, 마지막 네번째의 height는 1000px 입니다.
+            block_topology의 width는 100% 입니다.
+
+         -->
+        <div class="wrap_topology">
+            <div class="draw_section" style="border:0px solid rgba(255, 255, 255, 0); height:2646px;">
+            	<div id="paper"></div>
+            </div>
+            <!-- 
+                style="border:3px solid red; background-color: #f0f0f0; height:1000px;" 의 내용 중 border 과 background-color은
+                단순 구분을 위한 것으로 작업 시 에는 삭제 바랍니다.
+
+                height는 작업 시 값을 변경하여 사용 하시기 바랍니다.  
+            -->
+            <!-- 첫번째 블럭 -->
+            <div class="block_topology">
+                <div class="left_btn_group">
+                    <button class="icon_setting2" title="Setting" id="itz_setting"></button>
+                    <button class="icon_system2" title="System Info" id="itz_sysinfo"></button>
+                    <button class="icon_trans2" title="Transaction" id="itz_tran"></button>
+                    <button class="icon_info2" title="RelatedSystem Info" id="itz_related"></button>
+                </div>
+                <div class="right_btn_group">
+                    <button class="btn_blue">Save</button>
+                    <button>Internet</button>
+                </div>
+            </div>
+            <!-- // 첫번째 블럭 -->
+
+            <!-- 두번째 블럭 -->
+            <div class="block_topology">
+                <div class="left_btn_group">
+                    <button class="icon_system2" title="Server Info" id="dmz_svrinfo"></button>
+                    <button class="icon_trans2" title="Transaction" id="dmz_tran"></button>
+                </div>
+                <div class="right_btn_group">
+                    <button>DMZ</button>
+                </div>
+            </div>
+            <!-- // 두번째 블럭 -->
+
+            <!-- 세번째 블럭 -->
+            <div class="block_topology">
+                <div class="left_btn_group">
+                    <button class="icon_system2" title="Server Info" id="eai_svrinfo"></button>
+                    <button class="icon_trans2" title="Transaction" id="eai_tran"></button>
+                    <button class="icon_resource2" title="Resource Info" id="server_resource_status"></button>
+                </div>
+                <div class="right_btn_group">
+                    <button>EAI</button>
+                </div>
+            </div>
+            <!-- // 세번째 블럭 -->
+
+            <!-- 네번째 블럭 -->
+            <div class="block_topology">
+                <div class="left_btn_group">
+                    <button class="icon_setting2" title="Setting" id="lan_setting"></button>
+                    <button class="icon_system2" title="System Info" id="lan_sysinfo"></button>
+                    <button class="icon_trans2" title="Transaction" id="lan_tran"></button>
+                    <button class="icon_info2" title="RelatedSystem Info" id="lan_related"></button>
+                </div>
+                <div class="right_btn_group">
+                    <button>LAN</button>
+                </div>
+            </div>
+            <!-- // 네번째 블럭 -->
+        </div>
+		<div class="wrap_legend">
+            <div class="info_guide">
+                <!-- 
+                    색상은 index_color1 ~ index_color4 의 색상은 
+                    본 페이지 19 ~ 24의 소스를 이용하여 변경 할 수 있습니다
+                    (샘플 색상으로 넣어 놓았습니다.)
+                -->
+                <span><i class="index_color1"></i><spring:message code="label.text.0402" text="인터페이스 정상"/></span>
+                <span><i class="index_color2"></i><spring:message code="label.text.0403" text="인터페이스 오류"/></span>
+                <span><i class="index_color3"></i><spring:message code="label.text.0404" text="아답터 정상"/></span>
+                <span><i class="index_color4"></i><spring:message code="label.text.0405" text="아답터 오류"/></span>
+            </div>
+            <dl class="bottom_position">
+                <dt>Toast Message</dt>
+                <dd>
+                    <input type="radio" id="r1" name="toastMsgRadio" value="all">
+                    <label for="r1"><span></span><spring:message code="radiobutton.text.0011" text="All"/></label>
+                    <input type="radio" id="r2" name="toastMsgRadio" value="error" checked>
+                    <label for="r2"><span></span><spring:message code="radiobutton.text.0015" text="Error"/></label>
+                </dd>
+            </dl>
+        </div>
+        <!-- // 내용 부분 -->
+
+<div id="topologyInterfaceLogPop" class="easyui-dialog" closed="true" noheader="true" data-options="modal:false" style="width: 1180px; height: 675px; padding: 10px;"></div>
+<div id="topologyInterfaceSystemPop" class="easyui-dialog" closed="true" noheader="true" data-options="modal:false" style="width: 860px; height: 750px; padding: 10px;"></div>
+<div id="topologyInterfaceSelectLogPop" class="easyui-dialog" closed="true" noheader="true" data-options="modal:false" style="width: 860px; height: 705px; padding: 10px;"></div>
+<div id="topologyInterfaceSysDetailPop" class="easyui-dialog" closed="true" noheader="true" data-options="modal:false" style="width: 880px; height: 700px; padding: 10px;"></div>
+<div id="topologyInterfaceSvrDetailPop" class="easyui-dialog" closed="true" noheader="true" data-options="modal:false" style="width: 460px; height: 740px; padding: 10px;"></div>
+<div id="topologyInterfaceRelatedSysDetailPop" class="easyui-dialog" closed="true" noheader="true" data-options="modal:false" style="width: 1180px; height: 670px; padding: 10px;"></div>
+<div id="topologyServerResourceStatusPop" class="easyui-dialog" closed="true" noheader="true" data-options="modal:false" style="width: 900px; height: 850px; padding: 10px;"></div>
