@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+    
+    <!-- 
+    	- MariaDB Transaction 설정 
+        - Multi Transaction의 Default Connect
+    -->
+	<bean id="txManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+	  <property name="dataSource" ref="serverBasicDataSources"/>
+	</bean>
+
+	<!-- Mapper.xml 을 동적 로딩하도록 Class overriding -->
+ 	<!-- <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean"> -->
+ 	<bean id="sqlSessionFactory" class="com.xconnect.eai.server.common.util.RefreshableSqlSessionFactoryBean">
+		<property name="dataSource" ref="serverBasicDataSources" />
+		<property name="configLocation" value="classpath:/sqlMap/sql-mapper-conf.xml"/>
+        <property name="mapperLocations">
+            <array>
+            	<value>classpath:sqlMap/**/*DAO.xml</value>
+                <value>classpath:sqlMap/**/**/*DAO.xml</value>
+            </array>
+        </property>
+		<property name="interval" value="1000"/>		<!-- 1초에 한번씩 mapperLocations 감시하여 변경된 파일 watch -->
+	</bean>
+	
+ 	<bean id="sqlSession" class="org.mybatis.spring.SqlSessionTemplate" destroy-method="clearCache">
+        <constructor-arg ref="sqlSessionFactory" />
+    </bean> 
+	
+	<bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.xconnect.eai" />
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/>
+        <property name="annotationClass" value="org.springframework.stereotype.Repository"/>
+    </bean>
+    
+    <!-- Server 통계용도 session factory -->
+ 	<bean id="sqlSessionFactory_Sever_Static" class="com.xconnect.eai.server.common.util.RefreshableSqlSessionFactoryBean">
+		<property name="dataSource" ref="serverBasicDataSources_SERVER_STATISTC" />
+		<property name="configLocation" value="classpath:/sqlMap/sql-mapper-conf.xml"/>
+        <property name="mapperLocations">
+            <array>
+            	<value>classpath:sqlMap/**/*DAO.xml</value>
+                <value>classpath:sqlMap/**/**/*DAO.xml</value>
+            </array>
+        </property>
+		<property name="interval" value="1000"/>		<!-- 1초에 한번씩 mapperLocations 감시하여 변경된 파일 watch -->
+	</bean>
+     <bean id="sqlSession_Sever_Static" class="org.mybatis.spring.SqlSessionTemplate" destroy-method="clearCache">
+        <constructor-arg ref="sqlSessionFactory_Sever_Static" />
+    </bean> 
+
+</beans>	
