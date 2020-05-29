@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <jmxConfigurator/>
+
+    <property name="CONSOLE_LOG_PATTERN_DEBUG" value="%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%c:%L]){cyan} %clr(:){faint} %m%n%wex"/>
+    <property name="CONSOLE_LOG_PATTERN" value="%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%c:%L]){cyan} %clr(:){faint} %m%n%wex"/>
+    <property name="FILE_LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%c:%L] : %m%n%wex"/>
+    <property name="MONITORING_LOG_PATTERN" value="[${PID:- }] [%d{yyyyMMdd-HHmmssSSS}] %m%n%wex"/>
+
+    <property name="LAUNCHER_LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-${java.io.tmpdir:-.}}/xconnect-server.log}"/>
+
+    <conversionRule conversionWord="clr" converterClass="org.springframework.boot.logging.logback.ColorConverter"/>
+    <conversionRule conversionWord="wex" converterClass="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN_DEBUG}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <encoder>
+            <pattern>${FILE_LOG_PATTERN}</pattern>
+        </encoder>
+        <file>${LAUNCHER_LOG_FILE}</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+            <fileNamePattern>${LAUNCHER_LOG_FILE}.%i</fileNamePattern>
+        </rollingPolicy>
+        <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+            <MaxFileSize>100MB</MaxFileSize>
+        </triggeringPolicy>
+    </appender>
+
+    <logger name="com.xconnect.eai" level="${LOGGING_LEVEL:-DEBUG}"/>
+
+    <logger name="org.hibernate.validator.internal.util.Version" level="WARN"/>
+    <logger name="org.apache.coyote.http11.Http11NioProtocol" level="WARN"/>
+    <logger name="org.crsh.plugin" level="WARN"/>
+    <logger name="org.apache.tomcat.util.net.NioSelectorPool" level="WARN"/>
+    <logger name="org.apache.catalina.startup.DigesterFactory" level="ERROR"/>
+    <logger name="org.apache.activemq.transport.failover.FailoverTransport" level="ERROR"/>
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.hibernate" level="INFO"/>
+    <logger name="org.quartz" level="INFO"/>
+    <logger name="com.mchange" level="INFO"/>
+    <logger name="org.jgroups" level="INFO"/>
+    <logger name="org.hibernate" level="INFO"/>
+    <logger name="org.apache.sshd" level="WARN"/>
+    <logger name="org.eclipse.jetty" level="INFO"/>
+
+    <logger name="com.hazelcast" level="ERROR"/>
+    <logger name="org.mongodb.driver" level="ERROR"/>
+    <logger name="org.apache.activemq" level="ERROR"/>
+    <logger name="org.apache.http" level="ERROR"/>
+    <logger name="org.apache.camel.component.bean.AbstractBeanProcessor" level="ERROR"/>
+    <logger name="org.apache.camel.component.rmi.RmiConsumer" level="ERROR"/>
+    <logger name="org.apache.catalina.connector" level="OFF"/> <!-- tomcat refresh connector warning 무시 -->
+    <logger name="org.springframework.aop.framework.CglibAopProxy" level="OFF"/> <!-- sqlsessionfactory proxy warning 무시 -->
+	<logger name="io.netty" level="ERROR"/>
+	<logger name="org.apache.camel.spring.SpringCamelContext" level="ERROR"/>
+	<logger name="org.apache.commons.digester" level="ERROR"/>
+	<logger name="org.apache.camel.component.jms" level="ERROR"/>
+	<logger name="org.mybatis.spring.SqlSessionFactoryBean" level="ERROR"/>
+
+    <logger name="jdbc.sqlonly" level="INFO"/>
+    <logger name="jdbc.sqltiming" level="WARN"/>
+    <logger name="jdbc.resultset" level="WARN"/>
+    <logger name="jdbc.resultsettable" level="WARN"/>
+    <logger name="jdbc.audit" level="WARN"/>
+    <logger name="jdbc.connection" level="WARN"/>
+    <logger name="log4jdbc.debug" level="WARN"/>
+
+    <root level="${LOGGING_LEVEL:-INFO}">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>
+
+####################################
+# Log4JDBC Configuration
+####################################
+log4jdbc.debug.stack.prefix=LOG4JDBC
+log4jdbc.dump.booleanastruefalse=false
+log4jdbc.dump.sql.maxlinelength=0
+log4jdbc.dump.fulldebugstacktrace=false
+log4jdbc.statement.warn=false
+log4jdbc.dump.sql.select=false
+log4jdbc.dump.sql.insert=true
+log4jdbc.dump.sql.update=true
+log4jdbc.dump.sql.delete=true
+log4jdbc.dump.sql.create=true
+log4jdbc.dump.sql.addsemicolon=false
+log4jdbc.auto.load.popular.drivers=true
+log4jdbc.trim.sql=true
+log4jdbc.suppress.generated.keys.exception=false
