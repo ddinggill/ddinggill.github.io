@@ -95,22 +95,31 @@ public class SystemInitializeProcessor implements Processor {
 				String address		= CommonUtils.strNvl(cxfBeanInfoMap.get("ADDRESS"), "");
 				String wsdlUrl		= CommonUtils.strNvl(cxfBeanInfoMap.get("WSDL_URL"), "");
 				String serviceName	= CommonUtils.strNvl(cxfBeanInfoMap.get("SERVICE_NM"), "");
-				String serviceClass	= CommonUtils.strNvl(cxfBeanInfoMap.get("SERVICE_CLASS"), "");
+				String serviceClass	= "org.apache.camel.component.cxf.DefaultSEI"; //CommonUtils.strNvl(cxfBeanInfoMap.get("SERVICE_CLASS"), "");
 				String endpointName	= CommonUtils.strNvl(cxfBeanInfoMap.get("ENDPOINT_NM"), "");
+				
 				
 				String cxfBeanXml = SystemCommonConstants.SPRING_BEAN_PREFIX;
 				cxfBeanXml += "<cxf:cxfEndpoint id=\"" + beanId + "\"\n";
 				if(address != null && !address.trim().isEmpty())
 					cxfBeanXml += "	address=\"" + address + "\" \n" ;
-				if(endpointName != null && !endpointName.trim().isEmpty())
-					cxfBeanXml += "	endpointName=\"s:" + endpointName + "\" \n" ;
-				if(serviceName != null && !serviceName.trim().isEmpty())
-					cxfBeanXml += "	serviceName=\"s:" + serviceName + "\" \n" ;
+//				if(endpointName != null && !endpointName.trim().isEmpty())
+//					cxfBeanXml += "	endpointName=\"s:" + endpointName + "\" \n" ;
+//				if(serviceName != null && !serviceName.trim().isEmpty())
+//					cxfBeanXml += "	serviceName=\"s:" + serviceName + "\" \n" ;
 				if(wsdlUrl != null && !wsdlUrl.trim().isEmpty())
 					cxfBeanXml += "	wsdlURL=\"" + wsdlUrl + "\" \n" ;
-				if(serviceClass != null && !serviceClass.trim().isEmpty())
-					cxfBeanXml += "	serviceClass=\"" + serviceClass + "\" \n" ;
-				cxfBeanXml += "	xmlns:s=\"http://eai.xconnect.com/webservice/tns\" />";
+//				if(serviceClass != null && !serviceClass.trim().isEmpty())
+//					cxfBeanXml += "	serviceClass=\"" + serviceClass + "\" \n" ;
+				
+				cxfBeanXml += "	>\n";
+				cxfBeanXml += 	"	<cxf:properties>\n" + 
+								"		<entry key=\"mtom-enabled\" value=\"true\" />\n" + 
+								"		<entry key=\"dataFormat\" value=\"PAYLOAD\" />\n" + 
+								"		<entry key=\"allowStreaming\" value=\"true\" />\n" + 
+								"	</cxf:properties>\n"; 
+				cxfBeanXml += "</cxf:cxfEndpoint>";
+				
 				cxfBeanXml += SystemCommonConstants.SPRING_BEAN_SURFIX;
 
 				List<Map<String, Object>> cxfBeanRegistResult = SpringBeanManager.SpringBeanRegister(cxfBeanXml, "");
