@@ -604,3 +604,355 @@ public class HazelCastExcutorForRegister {
 	
 }
 
+
+--------------CamelRouterClusterHandler
+
+/*
+ * Copyright Hyundai AutoEver.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai AutoEver. ("Confidential Information").
+ */
+package com.xconnect.eai.server.service.register.handler; 
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Lists;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.service.register.CamelRouterManager;
+import com.xconnect.eai.server.service.register.handler.vo.CamelRouterRegisterVO;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.service.register.handler 
+ *    |_ CamelRouterClusterHandler.java
+ * 
+ * </pre>
+ * @date : 2019. 12. 30. 오후 5:10:12
+ * @version : 
+ * @author : A931744
+ */
+public class CamelRouterClusterHandler implements Callable<CamelRouterRegisterVO>, Serializable {
+
+	private static final long serialVersionUID = 1L;
+	private static final Logger LOG = LoggerFactory.getLogger(CamelRouterClusterHandler.class);
+	private CamelRouterRegisterVO regVo;
+	
+	protected CamelRouterClusterHandler() {
+		// prevent default constructor
+	}
+	public CamelRouterClusterHandler(CamelRouterRegisterVO vo) {
+		this.regVo = vo;
+	}
+	
+	@Override
+	public CamelRouterRegisterVO call() throws Exception {
+		try {
+			CamelRouterRegisterVO vo = null;
+			switch (regVo.getCommand()) {
+			case REGIST:
+			case MODIFY:
+				vo = register(regVo);
+				break;
+			case DELETE:
+				vo = delete(regVo);
+				break;
+			case START:
+			case STOP:
+			case RESTART:
+			case PAUSE:
+				vo = command(regVo);
+				break;
+			case READ:
+				vo = read(regVo);
+				break;
+				
+			default:
+				break;
+			}
+			return vo;
+		} catch (Exception e) {
+			LOG.error("[CamelRouterClusterHandler] >> call :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+	private CamelRouterRegisterVO register(CamelRouterRegisterVO regVo) throws Exception {
+		try {
+			List<Map<String, Object>> rstMapList = CamelRouterManager.CamelRouterRegister(regVo.getRouter_xml(), regVo.getRouter_id(), regVo.getRouter_definition());
+			CamelRouterRegisterVO resultVo = new CamelRouterRegisterVO();
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setRouter_xml(regVo.getRouter_xml());
+			resultVo.setRouter_id(regVo.getRouter_id());
+			resultVo.setRouter_definition(regVo.getRouter_definition());
+			resultVo.setResult(rstMapList.size() + "개의 Router가 등록되었습니다.");
+			resultVo.getResultMap().put("camel_context", rstMapList);
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[CamelRouterClusterHandler] >> register :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	private CamelRouterRegisterVO delete(CamelRouterRegisterVO regVo) throws Exception {
+		try {
+			CamelRouterRegisterVO resultVo = new CamelRouterRegisterVO();
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setRouter_xml(regVo.getRouter_xml());
+			resultVo.setRouter_id(regVo.getRouter_id());
+			resultVo.setRouter_definition(regVo.getRouter_definition());
+
+			List<String> id_list = new ArrayList<String>();
+			if(StringUtils.isEmpty(regVo.getRouter_xml())) {
+				id_list.add(regVo.getRouter_id());
+			} else {  
+				id_list = CommonUtils.findIdInXml(regVo.getRouter_xml(), false);
+			}
+
+			List<Map<String, Object>> routeList = Lists.newArrayList();
+			id_list.stream().forEach((route_id) -> {
+				try {
+					Map<String, Object> rstMap = CamelRouterManager.CamelRouterDelete(route_id);
+					routeList.add(rstMap);
+				} catch (XConnectEaiServerException e) {
+					CommonUtils.throwException(e);
+				}
+			});
+			resultVo.getResultMap().put("camel_context", routeList);
+			resultVo.setResult(routeList.size() + "개의 Router가 삭제되었습니다.");
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[CamelRouterClusterHandler] >> delete :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.CAMEL_ROUTER_DELETE_FAILED);
+		}
+	}
+	
+	private CamelRouterRegisterVO command(CamelRouterRegisterVO regVo) throws Exception {
+		try {
+			CamelRouterRegisterVO resultVo = new CamelRouterRegisterVO();
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setRouter_xml(regVo.getRouter_xml());
+			resultVo.setRouter_id(regVo.getRouter_id());
+			resultVo.setRouter_definition(regVo.getRouter_definition());
+			
+			List<String> id_list = new ArrayList<String>();
+			if(regVo.getRouter_xml().equals("")) { 
+				id_list.add(regVo.getRouter_id());
+			} else { 
+				id_list = CommonUtils.findIdInXml(regVo.getRouter_xml(), false);
+			}
+			
+			List<Map<String, Object>> routeList = Lists.newArrayList();
+			id_list.stream().forEach((route_id) -> {
+				try {
+					Map<String, Object> rstMap = CamelRouterManager.CamelRouterCommand(route_id, regVo.getCommand().getCommandString().toLowerCase());
+					routeList.add(rstMap);
+				} catch (XConnectEaiServerException e) {
+					CommonUtils.throwException(e);
+				}
+			});
+			resultVo.getResultMap().put("camel_context", routeList);
+			resultVo.setResult(routeList.size() + "개의 Router에 "+ regVo.getCommand().getCommandString().toUpperCase()+" 명령이 실행되었습니다.");
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[CamelRouterClusterHandler] >> command :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(e.getMessage(), XConnectEaiServerException.CAMEL_ROUTER_COMMAND_FAILED);
+		}
+	}
+	
+	private CamelRouterRegisterVO read(CamelRouterRegisterVO regVo) throws Exception {
+		try {
+			CamelRouterRegisterVO resultVo = new CamelRouterRegisterVO();
+			List<Map<String, Object>> resultList = CamelRouterManager.getRoutesInfo(regVo.getRouter_xml());
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setRouter_xml(regVo.getRouter_xml());
+			resultVo.setRouter_id(regVo.getRouter_id());
+			resultVo.setRouter_definition(regVo.getRouter_definition());
+			resultVo.getResultMap().put("camel_context", resultList);
+			resultVo.setResult("Router 정보를 조회하였습니다.");
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[CamelRouterClusterHandler] >> read :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+}
+
+
+-----------SpringBeanClusterHandler
+
+/*
+ * Copyright Hyundai AutoEver.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai AutoEver. ("Confidential Information").
+ */
+package com.xconnect.eai.server.service.register.handler; 
+
+import java.io.Serializable;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+
+import org.apache.commons.collections4.MapUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.service.register.SpringBeanManager;
+import com.xconnect.eai.server.service.register.handler.vo.SpringBeanRegisterVO;
+
+import io.jsonwebtoken.lang.Collections;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.service.register.handler 
+ *    |_ CamelRouterClusterHandler.java
+ * 
+ * </pre>
+ * @date : 2019. 12. 30. 오후 5:10:12
+ * @version : 
+ * @author : A931744
+ */
+public class SpringBeanClusterHandler implements Callable<SpringBeanRegisterVO>, Serializable {
+
+	private static final long serialVersionUID = 1L;
+	private static final Logger LOG = LoggerFactory.getLogger(SpringBeanClusterHandler.class);
+	private SpringBeanRegisterVO regVo;
+	
+	protected SpringBeanClusterHandler() {
+		// prevent default constructor
+	}
+	public SpringBeanClusterHandler(SpringBeanRegisterVO vo) {
+		this.regVo = vo;
+	}
+	
+	@Override
+	public SpringBeanRegisterVO call() throws Exception {
+		try {
+			SpringBeanRegisterVO vo = null;
+			switch (regVo.getCommand()) {
+			case REGIST:
+				vo = register(regVo);
+				break;
+			case MODIFY:
+				vo = modify(regVo);
+				break;
+			case DELETE:
+				vo = delete(regVo);
+				break;
+			case READ:
+				vo = read(regVo);
+				break;
+				
+			default:
+				break;
+			}
+			return vo;
+		} catch (Exception e) {
+			LOG.error("[SpringBeanClusterHandler] >> call :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+	private SpringBeanRegisterVO register(SpringBeanRegisterVO regVo) throws Exception {
+		try {
+			Map<String, Object> resultMap = SpringBeanManager.SpringBeanRegister(regVo.getBean_type(), regVo.getBean_xml(), regVo.getBean_definition());
+			SpringBeanRegisterVO resultVo = new SpringBeanRegisterVO();
+			resultVo.setBean_type(regVo.getBean_type());
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setBean_xml(regVo.getBean_xml());
+			resultVo.setBean_id(regVo.getBean_id());
+			resultVo.setBean_definition(regVo.getBean_definition());
+			resultVo.getResultMap().putAll(resultMap);
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> spCtx = (List<Map<String, Object>>) MapUtils.getObject(resultMap, "spring_context");
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> cmCtx = (List<Map<String, Object>>) MapUtils.getObject(resultMap, "camel_context");
+			int cnt = Collections.size(spCtx) + Collections.size(cmCtx);
+			resultVo.setResult(cnt + "개의 Bean이 등록되었습니다.");
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[SpringBeanClusterHandler] >> register :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+	private SpringBeanRegisterVO modify(SpringBeanRegisterVO regVo) throws Exception {
+		try {
+			Map<String, Object> resultMap = SpringBeanManager.SpringBeanModify(regVo.getBean_type(), regVo.getBean_xml(), regVo.getBean_definition());
+			SpringBeanRegisterVO resultVo = new SpringBeanRegisterVO();
+			resultVo.setBean_type(regVo.getBean_type());
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setBean_xml(regVo.getBean_xml());
+			resultVo.setBean_id(regVo.getBean_id());
+			resultVo.setBean_definition(regVo.getBean_definition());
+			resultVo.getResultMap().putAll(resultMap);
+			@SuppressWarnings("unchecked")
+			Map<String, Object> procRegMap = (Map<String, Object>) MapUtils.getObject(resultMap, "process_register");
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> spCtx = (List<Map<String, Object>>) MapUtils.getObject(procRegMap, "spring_context");
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> cmCtx = (List<Map<String, Object>>) MapUtils.getObject(procRegMap, "camel_context");			
+			int cnt = Collections.size(spCtx) + Collections.size(cmCtx);
+			resultVo.setResult(cnt + "개의 Bean이 수정되었습니다.");
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[SpringBeanClusterHandler] >> register :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+	private SpringBeanRegisterVO delete(SpringBeanRegisterVO regVo) throws Exception {
+		try {
+			Map<String, Object> resultMap = SpringBeanManager.SpringBeanDelete(regVo.getBean_type(), regVo.getBean_xml(), regVo.getBean_definition());
+			SpringBeanRegisterVO resultVo = new SpringBeanRegisterVO();
+			resultVo.setBean_type(regVo.getBean_type());
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setBean_xml(regVo.getBean_xml());
+			resultVo.setBean_id(regVo.getBean_id());
+			resultVo.setBean_definition(regVo.getBean_definition());
+			resultVo.getResultMap().putAll(resultMap);
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> spCtx = (List<Map<String, Object>>) MapUtils.getObject(resultMap, "spring_context");
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> cmCtx = (List<Map<String, Object>>) MapUtils.getObject(resultMap, "camel_context");
+			int cnt = Collections.size(spCtx) + Collections.size(cmCtx);
+			resultVo.setResult(cnt + "개의 Bean이 삭제되었습니다.");
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[SpringBeanClusterHandler] >> register :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+	private SpringBeanRegisterVO read(SpringBeanRegisterVO regVo) throws Exception {
+		try {
+			Map<String, Object> resultMap = SpringBeanManager.ContextRead(regVo.getBean_xml());
+			SpringBeanRegisterVO resultVo = new SpringBeanRegisterVO();
+			resultVo.setBean_type(regVo.getBean_type());
+			resultVo.setCommand(regVo.getCommand());
+			resultVo.setBean_xml(regVo.getBean_xml());
+			resultVo.setBean_id(regVo.getBean_id());
+			resultVo.setBean_definition(regVo.getBean_definition());
+			resultVo.getResultMap().putAll(resultMap);
+			resultVo.setResult("Bean 정보를 조회하였습니다.");
+			return resultVo;
+		} catch (Exception e) {
+			LOG.error("[SpringBeanClusterHandler] >> read :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+
+}
