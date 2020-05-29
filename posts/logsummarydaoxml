@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+ 
+<mapper namespace="com.xconnect.eai.server.common.dao.service.util.LogSummaryDAO">
+
+	<!-- ==================================================================================== -->
+	<!-- 1. Select Statement -->
+	<!-- ==================================================================================== -->
+	<select id="interfaceLog_stat_chk" resultType="java.lang.Integer">
+		SELECT COUNT(*)
+		FROM
+		TB_ADM_INTERFACE_STAT_MEM
+	</select>
+
+	<select id="interfaceLog_stat_eai_chk" resultType="java.lang.Integer">
+		SELECT COUNT(*)
+		FROM
+		TB_ADM_INTERFACE_STAT_EAI_MEM
+	</select>
+	
+	<select id="interfaceLog_stat_proxy_chk" resultType="java.lang.Integer">
+		SELECT COUNT(*)
+		FROM
+		TB_ADM_INTERFACE_STAT_PROXY_MEM
+	</select>
+	
+	<!-- ==================================================================================== -->
+	<!-- 2. Insert Statement -->
+	<!-- ==================================================================================== -->
+	
+	<insert id="insertInterface_stat_mem" parameterType="java.util.Map">
+			INSERT INTO TB_ADM_INTERFACE_STAT_MEM
+			(
+				YYYYMMDD
+				,HH24
+				,IF_ID
+				,IF_VER_NO
+				,SEND_GRP
+				,SENDER
+				,RECV_GRP
+				,RECEIVER
+				,TOTAL_CNT
+				,COMPLT_CNT
+				,SUCCESS_CNT
+				,FAIL_CNT
+				,MAX_DURATION
+				,MIN_DURATION
+				,AVG_DURATION
+				,TOT_DURATION
+				,REG_DT
+				,UPDT_DT
+				,IF_RESULT_CD
+				,MIN_START_DT
+				,MAX_START_DT
+			)
+			VALUES
+			(
+				#{YYYYMMDD, jdbcType=VARCHAR}, #{HH24, jdbcType=VARCHAR}, #{IF_ID, jdbcType=VARCHAR},
+				#{IF_VER_NO, jdbcType=VARCHAR}, #{SEND_GRP, jdbcType=VARCHAR}, #{SENDER, jdbcType=VARCHAR},
+				#{RECV_GRP, jdbcType=VARCHAR}, #{RECEIVER, jdbcType=VARCHAR},
+				1,
+				<choose> 
+					<when test='IF_RESULT_CD =="S"'>
+						#{COMPLT_CNT, jdbcType=NUMERIC}, #{SUCCESS_CNT, jdbcType=NUMERIC}, 0,
+					</when>
+					<when test='IF_RESULT_CD =="E" and COMPLT_CNT != null'>
+						#{COMPLT_CNT, jdbcType=NUMERIC}, 0, #{FAIL_CNT, jdbcType=NUMERIC},
+					</when>
+					<otherwise>
+						0, 0, #{FAIL_CNT, jdbcType=NUMERIC},
+					</otherwise>
+				</choose>
+				#{DURATION, jdbcType=NUMERIC}, #{DURATION, jdbcType=NUMERIC}, 
+				#{DURATION, jdbcType=NUMERIC}, #{DURATION, jdbcType=NUMERIC},
+				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, #{IF_RESULT_CD, jdbcType=VARCHAR},
+				#{START_DT}, #{START_DT}
+			)
+			ON DUPLICATE KEY UPDATE
+				TOTAL_CNT = TOTAL_CNT+1,
+				<choose> 
+					<when test='IF_RESULT_CD =="S"'>
+						SUCCESS_CNT = SUCCESS_CNT+1,
+						COMPLT_CNT = COMPLT_CNT+1,
+					</when>
+					<when test='IF_RESULT_CD =="E" and COMPLT_CNT != null'>
+						COMPLT_CNT = COMPLT_CNT+1,
+						FAIL_CNT = FAIL_CNT+1,
+					</when>
+					<otherwise>
+						FAIL_CNT = FAIL_CNT+1,
+					</otherwise>
+				</choose>
+				<![CDATA[
+				MAX_DURATION = if(#{DURATION, jdbcType=NUMERIC} > MAX_DURATION,
+                    				#{DURATION, jdbcType=NUMERIC}, 
+        							MAX_DURATION
+                    			),
+				MIN_DURATION = if(#{DURATION, jdbcType=NUMERIC} < MIN_DURATION,
+				                    #{DURATION, jdbcType=NUMERIC}, 
+				                    MIN_DURATION
+				                ),
+				TOT_DURATION = TOT_DURATION + #{DURATION, jdbcType=NUMERIC},
+				AVG_DURATION = (TOT_DURATION) / (TOTAL_CNT),
+				UPDT_DT = CURRENT_TIMESTAMP,
+				IF_RESULT_CD = #{IF_RESULT_CD, jdbcType=VARCHAR},
+				MIN_START_DT = if(#{START_DT} < MIN_START_DT,
+                    				#{START_DT}, MIN_START_DT
+                    			),
+                MAX_START_DT = if(#{START_DT} > MAX_START_DT,
+                    				#{START_DT}, MAX_START_DT
+                    			)
+				]]>
+	</insert>
+	
+	<insert id="insertInterface_stat_eai_mem" parameterType="java.util.Map">
+		INSERT INTO TB_ADM_INTERFACE_STAT_EAI_MEM
+		(
+		   YYYYMMDD
+		  ,HH24
+		  ,SVR_ID
+		  ,IF_ID
+		  ,IF_VER_NO
+		  ,TOTAL_CNT
+		  ,IF_RESULT_CD
+		  ,REG_DT
+		  ,UPDT_DT
+		)
+		VALUES 
+		(
+		 	#{YYYYMMDD, jdbcType=VARCHAR}, #{HH24, jdbcType=VARCHAR},
+		 	#{SVR_ID_EAI, jdbcType=VARCHAR}, #{IF_ID, jdbcType=VARCHAR},
+		 	#{IF_VER_NO, jdbcType=VARCHAR}, 1, #{IF_RESULT_CD, jdbcType=VARCHAR}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		)
+		ON DUPLICATE KEY UPDATE 
+		  TOTAL_CNT = TOTAL_CNT+1,
+		  IF_RESULT_CD = #{IF_RESULT_CD, jdbcType=VARCHAR},
+		  UPDT_DT = CURRENT_TIMESTAMP
+	</insert>
+	
+	<insert id="insertInterface_stat_proxy_mem" parameterType="java.util.Map">
+		INSERT INTO TB_ADM_INTERFACE_STAT_PROXY_MEM
+		(
+		   YYYYMMDD
+		  ,HH24
+		  ,SVR_ID
+		  ,TOTAL_CNT
+		  ,IF_RESULT_CD
+		  ,REG_DT
+		  ,UPDT_DT
+		)
+		VALUES 
+		(
+		 	#{YYYYMMDD, jdbcType=VARCHAR}, #{HH24, jdbcType=VARCHAR},
+		 	#{SVR_ID_PROXY, jdbcType=VARCHAR}, 1,
+		 	#{IF_RESULT_CD, jdbcType=VARCHAR}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		)
+		ON DUPLICATE KEY UPDATE 
+		  TOTAL_CNT = TOTAL_CNT+1,
+		  IF_RESULT_CD = #{IF_RESULT_CD, jdbcType=VARCHAR},
+		  UPDT_DT = CURRENT_TIMESTAMP
+	</insert>
+	
+	<insert id="insertInterface_stat_disk">
+		REPLACE
+		INTO TB_ADM_INTERFACE_STAT
+		SELECT *
+		FROM TB_ADM_INTERFACE_STAT_MEM
+		WHERE UPDT_DT > DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 3 HOUR)
+	</insert>
+	
+	<insert id="insertInterface_stat_eai_disk">
+		REPLACE
+		INTO TB_ADM_INTERFACE_STAT_EAI
+		SELECT *
+		FROM TB_ADM_INTERFACE_STAT_EAI_MEM
+		WHERE UPDT_DT > DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 3 HOUR)
+	</insert>
+	
+	<insert id="insertInterface_stat_proxy_disk">
+		REPLACE
+		INTO TB_ADM_INTERFACE_STAT_PROXY
+		SELECT *
+		FROM TB_ADM_INTERFACE_STAT_PROXY_MEM
+		WHERE UPDT_DT > DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 3 HOUR)
+	</insert>
+	
+	<insert id="insertInterface_stat_mem_init" parameterType="java.lang.String">
+		INSERT 
+		INTO TB_ADM_INTERFACE_STAT_MEM 
+		SELECT * 
+		FROM TB_ADM_INTERFACE_STAT 
+		WHERE (UPDT_DT BETWEEN DATE_ADD(CURRENT_TIMESTAMP, INTERVAL -2 HOUR) AND CURRENT_TIMESTAMP)
+	</insert>
+	
+	<insert id="insertInterface_stat_eai_mem_init" parameterType="java.lang.String">
+		INSERT 
+		INTO TB_ADM_INTERFACE_STAT_EAI_MEM 
+		SELECT * 
+		FROM TB_ADM_INTERFACE_STAT_EAI
+		WHERE (UPDT_DT BETWEEN DATE_ADD(CURRENT_TIMESTAMP, INTERVAL -2 HOUR) AND CURRENT_TIMESTAMP)
+	</insert>
+	
+	<insert id="insertInterface_stat_proxy_mem_init" parameterType="java.lang.String">
+		INSERT 
+		INTO TB_ADM_INTERFACE_STAT_PROXY_MEM 
+		SELECT * 
+		FROM TB_ADM_INTERFACE_STAT_PROXY
+		WHERE (UPDT_DT BETWEEN DATE_ADD(CURRENT_TIMESTAMP, INTERVAL -2 HOUR) AND CURRENT_TIMESTAMP)
+	</insert>
+	
+	<insert id="insertSummaryByTrakingId" parameterType="java.util.Map">
+			INSERT INTO TB_ADM_SUMMARY_BY_TRACKINGID
+			(
+				PARTITION_DT
+				,IF_ID
+				,IF_VER_NO
+				,SEND_GRP
+				,SENDER
+				,RECV_GRP
+				,RECEIVER
+				,IF_TRACKING_ID
+				,EVENT_TIME
+				,STATUS
+				,PROC_DT
+				,BODY_YN
+				,DURATION
+				,CORELATION_KEY
+			)
+			VALUES
+			(
+				#{PARTITION_DT, jdbcType=NUMERIC}, #{IF_ID, jdbcType=VARCHAR}, #{IF_VER_NO, jdbcType=VARCHAR}, 
+				#{SEND_GRP, jdbcType=VARCHAR}, #{SENDER, jdbcType=VARCHAR},
+				#{RECV_GRP, jdbcType=VARCHAR}, #{RECEIVER, jdbcType=VARCHAR},
+				#{IF_TRACKING_ID, jdbcType=VARCHAR}, #{EVENT_TIME}, #{STATUS, jdbcType=VARCHAR}, 
+				#{START_DT}, #{BODY_YN, jdbcType=VARCHAR}, #{DURATION, jdbcType=NUMERIC},
+				#{CORELATION_KEY, jdbcType=VARCHAR}
+			)
+			ON DUPLICATE KEY UPDATE
+				<![CDATA[
+				EVENT_TIME = if(#{EVENT_TIME} > EVENT_TIME,
+                    				#{EVENT_TIME}, EVENT_TIME
+                    			),
+                STATUS = if(STATUS = 'E',
+                				STATUS, #{STATUS, jdbcType=VARCHAR}),
+                PROC_DT = if(#{START_DT} > PROC_DT,
+                    				#{START_DT}, PROC_DT
+                    			),
+                BODY_YN = if(BODY_YN = 'Y',
+                				BODY_YN, #{BODY_YN, jdbcType=VARCHAR})   			
+				]]>
+	</insert>
+</mapper>
