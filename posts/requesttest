@@ -1,0 +1,324 @@
+/*
+ * Copyright Hyundai AutoEver.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai AutoEver. ("Confidential Information").
+ */
+package com.xconnect.eai.test.auth; 
+
+import static org.junit.Assert.*;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.model.RouteDefinition;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.service.auth.vo.AuthorizationInfoVO;
+
+/**
+ * <pre>
+ * com.xconnect.eai.test.auth 
+ *    |_ AuthCheckTest.java
+ * 
+ * </pre>
+ * @date : 2020. 2. 11. 오후 5:10:44
+ * @version : 
+ * @author : A931744
+ */
+public class AuthCheckTest {
+
+	private static final Logger LOG = LoggerFactory.getLogger(AuthCheckTest.class);
+
+	@Test
+	public void request_header_check_test() throws Exception {
+		try {
+			CamelContext ctx = new DefaultCamelContext();
+			
+			ctx.addRoutes(new RouteBuilder() {
+				@Override
+				public void configure() throws Exception {
+					from("jetty:http://0.0.0.0:7071/services/receive")
+					.process(new Processor() {
+						@Override
+						public void process(Exchange exchange) throws Exception {
+							HttpServletRequest servletRequest = exchange.getIn().getHeader("CamelHttpServletRequest", HttpServletRequest.class);
+							Enumeration<String> headers = servletRequest.getHeaderNames();
+							while(headers.hasMoreElements()) {
+								String keyString = headers.nextElement();
+								LOG.debug(String.format("[%s] = %s", keyString, servletRequest.getHeader(keyString) ) );
+							}
+							String cliIp = CommonUtils.getClientIpAddr(servletRequest);
+							LOG.debug(" Client IP ==> " + cliIp);
+							
+							AuthorizationInfoVO vo = CommonUtils.getAuthInfo(servletRequest);
+							LOG.debug(" AuthorizationInfoVO ==> " + vo);
+						}
+					});
+					
+					
+					LOG.debug("## Start!!");
+				}
+			});
+			
+			ctx.start();
+			
+			Thread.sleep(5 * 60 * 1000);
+			ctx.stop();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@Test
+	public void regexp_test() throws Exception {
+		try {
+			String findStr = "aaa( ${E_FAILdids  } == 'S', 'W', ${AA_2} )";
+			String regExp = "\\$\\{\\s*\\w+\\s*\\}";
+			Pattern p = Pattern.compile(regExp);
+			Matcher m = p.matcher(findStr);
+
+			System.out.println("[AuthCheckTest] >> regexp_test :: " + m.find());
+			System.out.println("[AuthCheckTest] >> regexp_test :: " + m.groupCount());
+			System.out.println("[AuthCheckTest] >> regexp_test :: " + m.group());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+
+	@Test
+	public void if_call_test() throws Exception {
+		try {
+			String success_file_path = "C:\\Users\\A932060\\eclipse-workspace\\XConnect_Server\\src\\test\\resources\\call.data";
+			//String fail_file_path = "D:\\00.Project\\workspace_java\\XConnect_Debugger\\src\\test\\resources\\call_fail.data";
+
+			String success_data = readFile(success_file_path);
+			//String fail_data = readFile(fail_file_path);
+			
+			String[] systemList = {"DAOS", "GWMS", "LTS", "ERP", "BOM", "HQ-EAI", "DTS", "GLOVIS"};
+			//String[] systemList = {"GWMS", "DAOS", "LTS", "ERP", "BOM", "HQ-EAI", "DTS", "GLOVIS"};
+			
+//			CloseableHttpClient client = HttpClients.createMinimal();
+//			HttpPost post = new HttpPost("http://10.10.152.252:7071/services/receive");
+
+			DefaultHttpClient httpClient = new DefaultHttpClient();
+			
+			HttpPost httppost = new HttpPost("http://10.10.152.252:7071/services/receive");
+
+			for(int i=0; i<10000; i++) {
+				for(String system : systemList) {
+					String trackingId = UUID.randomUUID().toString();
+					String datetime = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+					String sender = "CXP";
+					//String receiver = (i % 17 == 0) ? "CN_partner_00001" : system;
+					String receiver = system;
+					String success_req_date = "20180621";
+					String fail_req_date = "20180631";
+					
+					int randomNumber = -1;
+					while (true) {
+						randomNumber = ThreadLocalRandom.current().nextInt(100);
+						if(randomNumber < 8) break;
+					}
+					String requestData = fail_req_date;
+					//String requestData = success_req_date;
+//					if(systemList[randomNumber].equalsIgnoreCase(system)) requestData = fail_req_date;
+
+					String successData = success_data.replace("__TX_ID__", trackingId)
+													.replace("__SENDER__", sender)
+													.replace("__RECEIVER__", receiver)
+													.replace("__DATE_TIME__", datetime)
+													.replace("__REQUEST_DATE__", requestData)
+												;
+					
+					StringEntity	postingString		= new StringEntity(successData);
+					httppost.setEntity(postingString);
+					httppost.setHeader("Authorization", "Basic Z2VuZXNpc2RpaDppbXNpITEyMzQ=");
+					httppost.setHeader("Content-type", "application/json");
+
+					HttpResponse	response			= httpClient.execute(httppost);
+					HttpEntity		entity				= response.getEntity();
+					String			responseString		= EntityUtils.toString(entity, "UTF-8");
+					
+					int responseCode = response.getStatusLine().getStatusCode();
+
+					Thread.sleep(10000);
+				}
+			}
+ 		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public static String readFile(String file_path) throws Exception {
+		try {
+			String file_contents = "";
+			File file = new File(file_path);
+			
+			FileReader fr = new FileReader(file);
+			BufferedReader br = new BufferedReader(fr);
+			
+			String line = "";
+			while((line = br.readLine()) != null) {
+				file_contents += line;
+			}
+			try {
+				if(br != null) br.close();
+				if(fr != null) fr.close();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			
+			return file_contents;
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+	
+	@Test
+	public void auth_gen_test() throws Exception {
+		try {
+			Map<String, String> authInfoMap = new HashMap<>();
+			String clientId = UUID.randomUUID().toString().replaceAll("-", "").toUpperCase() + UUID.randomUUID().toString().replaceAll("-", "").toUpperCase();
+			String cleintSecret = UUID.randomUUID().toString().replaceAll("-", "").toUpperCase() + UUID.randomUUID().toString().replaceAll("-", "").toUpperCase();
+			
+			authInfoMap.put("clientId", clientId);
+			authInfoMap.put("clientSecret", cleintSecret);
+			
+			System.out.println("[AuthCheckTest] >> auth_gen_test :: " + authInfoMap);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@Test
+	public void val_xpath_test() throws Exception {
+		String value = "${body.import.IS_IN.I_IFID}";
+		System.out.println(checkPropertyValue(value));
+	}
+	private String checkPropertyValue(String value) {
+		try {
+			value = value.trim();
+			if(value.startsWith("${") && value.endsWith("}")) {
+				String valueXpathKeyFullName = value.substring(2, value.length() -1);
+				String valueXpathKeyName = valueXpathKeyFullName.substring(valueXpathKeyFullName.indexOf(".") + 1);
+				
+				String xpathValue = "";
+				if(valueXpathKeyFullName.startsWith("header")) {
+					
+				} else if(valueXpathKeyFullName.startsWith("body")) {
+					
+				}
+				
+				return xpathValue;
+			}
+			
+			return value;
+		} catch (Exception e) {
+			return value;
+		}
+	}
+	
+	public class TestMainRouter1 extends RouteBuilder{
+
+		@Override
+		public void configure() throws Exception {
+			from("timer://timertest1?period=1000&delay=1000").routeId("timertest1")
+			.process(new Processor() {
+				@Override
+				public void process(Exchange exchange) throws Exception {
+					System.out.println("timertest1 router");
+				}
+			})
+			;
+			
+			from("timer://timertest1?period=1000&delay=1000").routeId("timertest1_1")
+			.process(new Processor() {
+				@Override
+				public void process(Exchange exchange) throws Exception {
+					System.out.println("timertest1_1 router");
+				}
+			})
+			;
+		}
+	}
+	
+	public class TestMainRouter2 extends RouteBuilder{
+
+		@Override
+		public void configure() throws Exception {
+			from("timer://timertest2?period=1000&delay=1000").routeId("timertest2")
+			.process(new Processor() {
+				@Override
+				public void process(Exchange exchange) throws Exception {
+					System.out.println("timertest2 router");
+				}
+			})
+			;
+		}
+	}
+	
+	@Test
+	public void addroute() throws Exception {
+		try {
+			TestMainRouter1 r1 = new TestMainRouter1();
+			CamelContext ctx = new DefaultCamelContext();
+			TestMainRouter2 r2 = new TestMainRouter2();
+			ctx.addRoutes(r1);
+			ctx.addRoutes(r2);
+			ctx.start();
+			
+			Thread.sleep(5000);
+			ctx.stop();
+			RouteDefinition asd = ctx.getRouteDefinition("timertest2");
+			ctx.removeRoute("timertest2");
+			List<RouteDefinition> routes = ctx.getRouteDefinitions();
+			routes.add(asd);
+			
+			RouteDefinition test1 = new RouteDefinition("timer://timertest2?period=1000&delay=1000").process(new Processor() {
+				@Override
+				public void process(Exchange exchange) throws Exception {
+					System.out.println("timertest3 router");
+				}
+			});
+			routes.add(test1);
+			System.out.println(routes.size());
+			ctx.start();
+			Thread.sleep(5000);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+}
