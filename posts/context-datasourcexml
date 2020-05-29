@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+    
+	<!-- MariaDB DataSource (WEB, DEVELOPER용)  -->    
+	<bean id="serverBasicDataSources" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+    	<property name="driverClassName" value="${jdbc.mariadb.driver}" />
+        <property name="url" value="${jdbc.mariadb.url}" />
+        <property name="username" value="${jdbc.mariadb.username}" />
+        <property name="password" value="${jdbc.mariadb.password}" />
+        <property name="initialSize" value="2"/>
+	    <property name="maxTotal" value="20"/>
+        <property name="maxIdle" value="15"/>
+	    <property name="validationQuery" value="SELECT 1 "/>
+	    <property name="testWhileIdle" value="true"/>
+	    <property name="removeAbandonedOnBorrow" value="true"/>
+	    <property name="removeAbandonedOnMaintenance" value="true"/>
+	    <property name="maxWaitMillis" value="1000"/>
+	    <property name="timeBetweenEvictionRunsMillis" value="300000"/>
+	    <property name="defaultAutoCommit" value="true"/>
+	</bean>
+	
+	<!-- MariaDB DataSource (Server 통계용)  -->    
+	<bean id="serverBasicDataSources_SERVER_STATISTC" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+    	<property name="driverClassName" value="${jdbc.mariadb.driver}" />
+        <property name="url" value="${jdbc.mariadb.url.server.static}" />
+        <property name="username" value="${jdbc.mariadb.username}" />
+        <property name="password" value="${jdbc.mariadb.password}" />
+        <property name="initialSize" value="2"/>
+	    <property name="maxTotal" value="20"/>
+        <property name="maxIdle" value="15"/>
+	    <property name="validationQuery" value="SELECT 1 "/>
+	    <property name="testWhileIdle" value="true"/>
+	    <property name="removeAbandonedOnBorrow" value="true"/>
+	    <property name="removeAbandonedOnMaintenance" value="true"/>
+	    <property name="maxWaitMillis" value="1000"/>
+	    <property name="timeBetweenEvictionRunsMillis" value="300000"/>
+	    <property name="defaultAutoCommit" value="true"/>
+	</bean>
+
+</beans>
