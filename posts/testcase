@@ -1,0 +1,1516 @@
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+package com.xconnect.eai.test; 
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
+import java.lang.reflect.Type;
+import java.math.BigDecimal;
+import java.net.HttpURLConnection;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketAddress;
+import java.net.URL;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.Period;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
+import java.util.Set;
+import java.util.TimeZone;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.apache.camel.Route;
+import org.apache.camel.RoutesBuilder;
+import org.apache.camel.ServiceStatus;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.model.RouteDefinition;
+import org.apache.camel.model.RouteDefinitionHelper;
+import org.apache.camel.model.RoutesDefinition;
+import org.apache.catalina.core.ApplicationContext;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.io.IOUtils;
+import org.apache.http.HttpHost;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.assertj.core.util.Arrays;
+import org.elasticsearch.action.bulk.BulkItemResponse;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.action.delete.DeleteRequest;
+import org.elasticsearch.action.delete.DeleteResponse;
+import org.elasticsearch.action.get.GetRequest;
+import org.elasticsearch.action.get.GetResponse;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.action.update.UpdateResponse;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.cluster.metadata.AliasAction.NewAliasValidator;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.transport.client.PreBuiltTransportClient;
+import org.fusesource.hawtbuf.ByteArrayInputStream;
+import org.joda.time.Days;
+import org.json.JSONObject;
+import org.json.XML;
+import org.json.XMLParserConfiguration;
+import org.junit.Test;
+import org.nlpcn.es4sql.query.ESActionFactory;
+import org.nlpcn.es4sql.query.SqlElasticRequestBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.core.io.ByteArrayResource;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonSerializationContext;
+import com.google.gson.JsonSerializer;
+import com.google.gson.TypeAdapter;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+import com.google.gson.stream.JsonWriter;
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.hazelcast.HazelCastManager;
+import com.xconnect.eai.server.common.util.CamelHelper;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.common.vo.InterfaceRequestMessage;
+import com.xconnect.eai.server.lib.converter.DataConverter;
+import com.xconnect.eai.server.lib.core.actions.ExpressionXpathFieldAction;
+import com.xconnect.eai.server.lib.core.core.DefaultAtlasFunctionResolver;
+import com.xconnect.eai.server.lib.model.Expression;
+import com.xconnect.eai.server.lib.util.TrackingIdGenerator;
+import com.xconnect.eai.test.auth.AuthCheckTest;
+import com.xconnect.eai.test.webservice.XsdGenWrapper;
+
+/**
+ * <pre>
+ * com.xconnect.eai.test 
+ *    |_ TestCase.java
+ * 
+ * </pre>
+ * @date : 2019. 11. 19. 오후 4:22:30
+ * @version : 
+ * @author : A931744
+ */
+@SpringBootApplication
+public class TestCase {
+
+	private static final Logger LOG = LoggerFactory.getLogger(TestCase.class);
+
+	@Test
+	public void user_func_regist() throws Exception {
+		try {
+			/*
+			 {
+			 	"name" : "kangnaru",
+			 	"address" : "seoul",
+			 	"age" : 20,
+			 	"grade" : -4,
+			 	"cur_dt" : "2019-10-22 13:04:40"
+			 }
+			 */
+			String jsonString = "{\"name\":\"2020-05-22\",\"address\":\"2020-07-02\",\"age\":\"\\\\h\",\"grade\":\"10\",\"cur_dt\":\"2019-10-22 13:04:40\"}";
+			String expression = " IF(${age} > 20, ${grade}, IF(PARSEINT(${grade}) >= -10, MONTHS_BETWEEN(${name},${address}), DATETOCHAR(${cur_dt}, 'yyyy-MM-dd HH:mm:ss', 'yyyyMMdd_HHmmSS') ) )   ";
+
+			Expression action = new Expression();
+			action.setExpression( expression );
+			Object resObject = ExpressionXpathFieldAction.process(action, jsonString);
+			System.out.println("result = " + resObject);
+
+			//			expression = 
+			//					"IF( PARSEINT(${age}) > 30," + 
+			//					"	'Grade = ' + TOSTR(${grade}) + '->' + ${cur_dt}," + 
+			//					"	IF( PARSEINT(${grade}) > 6," + 
+			//					"		${address}, " + 
+			//					"		TESTFUNC(${address}, 'IS Appended!!')" + 
+			//					"	)" + 
+			//					")";
+			//			
+			//			// UDF function loading
+			//			DefaultAtlasFunctionResolver.getInstance().addFunction("D:\\00.Project\\workspace_java\\udf-test\\target\\udf-test-0.1.jar", "com.test.func.TESTFUNC");
+			//			
+			//			Expression action = new Expression();
+			////			action.setExpression( " IF( PARSEINT(${age}) > 25, ${name}, DATETOCHAR(${cur_dt}, 'yyyy-MM-dd HH:mm:ss', 'yyyyMMdd_HHmmSS') + '.dat' )" );
+			//			action.setExpression( expression );
+			//			Object resObject = ExpressionXpathFieldAction.process(action, jsonString);
+			//			System.out.println("result = " + resObject);
+
+		} catch (Exception e) {
+			LOG.error("[TestCase] >> user_func_regist :: Error > " + CommonUtils.getPrintStackTrace(e));
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	@Test
+	public void xml_test() {
+		try {
+			String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n" + 
+					"<ROOT>" + 
+					"	<IS_IN>" + 
+					"		<I_IFID></I_IFID>" + 
+					"		<I_SENDERGRP></I_SENDERGRP>" + 
+					"		<I_SENDER></I_SENDER>" + 
+					"		<I_RECEIVERGRP></I_RECEIVERGRP>" + 
+					"		<I_RECEIVER></I_RECEIVER>" + 
+					"		<I_TRACKINGID></I_TRACKINGID>" + 
+					"		<I_DATETIME></I_DATETIME>" + 
+					"		<I_TOT_CNT></I_TOT_CNT>" + 
+					"		<I_FILEPATH></I_FILEPATH>" + 
+					"		<I_FILENAME></I_FILENAME>" + 
+					"		<I_IFRESULT></I_IFRESULT>" + 
+					"		<I_IFFAILMSG></I_IFFAILMSG>" + 
+					"	</IS_IN>" + 
+					"	<TABLES>" + 
+					"		<T_HEAD>" + 
+					"			<DEALERCD></DEALERCD>" + 
+					"			<CONT_NO></CONT_NO>" + 
+					"			<CONT_TYPE></CONT_TYPE>" + 
+					"			<CONT_ST></CONT_ST>" + 
+					"			<CONT_DT></CONT_DT>" + 
+					"			<CONT_AMT></CONT_AMT>" + 
+					"			<PRE_AMT></PRE_AMT>" + 
+					"			<MID_AMT></MID_AMT>" + 
+					"			<BALANCE_AMT></BALANCE_AMT>" + 
+					"		</T_HEAD>" + 
+					"		<T_COND>" + 
+					"			<CONT_NO></CONT_NO>" + 
+					"			<ITEM_NO></ITEM_NO>" + 
+					"			<SEQNO></SEQNO>" + 
+					"			<KSCHL></KSCHL>" + 
+					"			<COND_DESC></COND_DESC>" + 
+					"			<COND_AMT></COND_AMT>" + 
+					"		</T_COND>" + 
+					"		<T_ITEM>" + 
+					"			<CONT_NO></CONT_NO>" + 
+					"			<ITEM_NO></ITEM_NO>" + 
+					"			<MATNR></MATNR>" + 
+					"			<NSICODE></NSICODE>" + 
+					"			<ZZSSGRP></ZZSSGRP>" + 
+					"			<ZZMDYEAR></ZZMDYEAR>" + 
+					"		</T_ITEM>" + 
+					"	</TABLES>" + 
+					"	<IS_OUT>" + 
+					"		<I_IFRESULT></I_IFRESULT>" + 
+					"		<I_IFFAILMSG></I_IFFAILMSG>" + 
+					"	</IS_OUT>" + 
+					"</ROOT>";
+
+			XsdGenWrapper gen = new XsdGenWrapper();
+			StringReader sr = new StringReader(xml);
+			gen.parse(sr);
+
+			OutputStream os = new OutputStream() {
+				private StringBuilder string = new StringBuilder();
+				@Override
+				public void write(int b) throws IOException {
+					this.string.append((char) b );
+				}
+				@Override
+				public String toString(){
+					return this.string.toString();
+				}
+			};
+			gen.write(os);
+			String xsdString = os.toString();
+
+			JSONObject xmlJSONObj = XML.toJSONObject(xsdString);
+			String xmlJSONObjString = xmlJSONObj.toString();
+			System.out.println("### xmlJSONObjString=>" + xmlJSONObjString);
+			System.out.println("----------------------------------------------------------");
+
+			Map<String, Object> jsonMap = new Gson().fromJson(xmlJSONObjString, Map.class);
+			Map<String, Object> schemaMap = (Map<String, Object>) jsonMap.get("xsd:schema");
+			Map<String, Object> eleMap = (Map<String, Object>) schemaMap.get("xsd:element");
+			LinkedHashMap<String, Object> infoMap = new LinkedHashMap<>();
+			iterateJsonSchema(eleMap, "", infoMap);
+			System.out.println("[TestCase] >> xml_test :: Info Map = " + infoMap.toString());
+			System.out.println("----------------------------------------------------------");
+
+			String resultJsonStr = new Gson().toJson(infoMap);
+			System.out.println("[TestCase] >> xml_test :: Result JSON = " + resultJsonStr);
+			System.out.println("----------------------------------------------------------");
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	private void iterateJsonSchema(Map jsonMap, String root, LinkedHashMap infoMap) {
+		try {
+			String elem_name = getNvlData(jsonMap, "name", "").toString();
+			//			System.out.println("[TestCase] >> iterateJsonSchema > Element Name :: " + elem_name);
+
+			Object complexType = getNvlData(jsonMap, "xsd:complexType", new HashMap<>());
+			Object sequence = getNvlData((Map)complexType, "xsd:sequence", new HashMap<>());
+			Object subElement = getNvlData((Map)sequence, "xsd:element", null);
+
+			if(subElement != null) {
+				if(subElement instanceof List) {
+					for(Iterator<Map> iterList = ((List) subElement).iterator(); iterList.hasNext();) {
+						Map subSubElement = iterList.next();
+						iterateJsonSchema(subSubElement, root.equalsIgnoreCase("") ? elem_name : root + "." + elem_name, infoMap);
+					}
+				} else if(subElement instanceof Map) {
+					//					System.out.println("[TestCase] >> iterateJsonSchema > instanceof Map :: " + subElement.toString());
+				}
+			} else {
+				//				System.out.println("[TestCase] >> iterateJsonSchema > subElement is NULL :: root = " + root + ", map = " + jsonMap.toString());
+				String[] keys = root.split("[.]");
+				LinkedHashMap tmpMap = infoMap;
+				for(String key : keys) {
+					if(tmpMap.get(key) == null) tmpMap.put(key, new LinkedHashMap());
+					tmpMap = (LinkedHashMap) tmpMap.get(key);
+				}
+				tmpMap.put(jsonMap.get("name").toString(), "");
+
+				//				System.out.println("[TestCase] >> iterateJsonSchema :: ### Info Map = " + infoMap.toString());
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private Object getNvlData(Map<String, Object> map, String key, Object defaultObj) {
+		try {
+			if(map.get(key) == null) return (defaultObj == null) ? null : defaultObj ;
+			else return map.get(key);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return (defaultObj == null) ? null : defaultObj;
+		}
+	}
+
+	@Test
+	public void xml_parser_test() throws Exception {
+		try {
+			String xmlString = "	<request>\r\n" + 
+					"	    <header>\r\n" + 
+					"	        <ifId>IF_CN_ERP_CXP_0020</ifId>\r\n" + 
+					"	        <ifVer>v001</ifVer>\r\n" + 
+					"	        <ifSenderGrp>CN</ifSenderGrp>\r\n" + 
+					"	        <ifSender>ERP</ifSender>\r\n" + 
+					"	        <ifReceiverGrp>CN</ifReceiverGrp>\r\n" + 
+					"	        <ifReceiver>CXP</ifReceiver>\r\n" + 
+					"	        <ifTrackingId>4bc68e26-f318-4812-ae29-ac1ea8ea4e33</ifTrackingId>\r\n" + 
+					"	        <ifDateTime>20191218055418</ifDateTime>\r\n" + 
+					"	    </header>\r\n" + 
+					"	    <payload>\r\n" + 
+					"	        <ifTotCnt>7</ifTotCnt>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191015</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA30</OTD_CODE>\r\n" + 
+					"	            <C_STATUS>X</C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>CUSTOMS CLEARANCE</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>DA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>COMPOUND IN</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>DA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>DELIVERY CENTER IN</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>00000000</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>20191105</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191018</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	    </payload>\r\n" + 
+					"	</request>\r\n" + 
+					"";
+			JSONObject xmlJSONObj = XML.toJSONObject(xmlString);
+			String xmlJSONObjString = xmlJSONObj.toString();
+			System.out.println("### xmlJSONObjString=>" + xmlJSONObjString);
+
+		} catch (Exception e) {
+			// TODO: handle exception
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void message_convert_test() throws Exception {
+		String xmlString = "	<request>\r\n" + 
+				"	    <header>\r\n" + 
+				"	        <ifId>IF_CN_ERP_CXP_0020</ifId>\r\n" + 
+				"	        <ifVer>v001</ifVer>\r\n" + 
+				"	        <ifSenderGrp>CN</ifSenderGrp>\r\n" + 
+				"	        <ifSender>ERP</ifSender>\r\n" + 
+				"	        <ifReceiverGrp>CN</ifReceiverGrp>\r\n" + 
+				"	        <ifReceiver>CXP</ifReceiver>\r\n" + 
+				"	        <ifTrackingId>4bc68e26-f318-4812-ae29-ac1ea8ea4e33</ifTrackingId>\r\n" + 
+				"	        <ifDateTime>20191218055418</ifDateTime>\r\n" + 
+				"	    </header>\r\n" + 
+				"	    <payload>\r\n" + 
+				"	        <ifTotCnt>7</ifTotCnt>\r\n" + 
+				"	        <T_DATA>\r\n" + 
+				"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+				"	            <C_STATUS></C_STATUS>\r\n" + 
+				"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+				"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+				"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+				"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+				"	        </T_DATA>\r\n" + 
+				"	        <T_DATA>\r\n" + 
+				"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+				"	            <C_STATUS></C_STATUS>\r\n" + 
+				"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+				"	            <ACT_DATE>20191015</ACT_DATE>\r\n" + 
+				"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+				"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+				"	        </T_DATA>\r\n" + 
+				"	        <T_DATA>\r\n" + 
+				"	            <OTD_CODE>CA30</OTD_CODE>\r\n" + 
+				"	            <C_STATUS>X</C_STATUS>\r\n" + 
+				"	            <OTD_CODE_DESC>CUSTOMS CLEARANCE</OTD_CODE_DESC>\r\n" + 
+				"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+				"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+				"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+				"	        </T_DATA>\r\n" + 
+				"	        <T_DATA>\r\n" + 
+				"	            <OTD_CODE>DA10</OTD_CODE>\r\n" + 
+				"	            <C_STATUS></C_STATUS>\r\n" + 
+				"	            <OTD_CODE_DESC>COMPOUND IN</OTD_CODE_DESC>\r\n" + 
+				"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+				"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+				"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+				"	        </T_DATA>\r\n" + 
+				"	        <T_DATA>\r\n" + 
+				"	            <OTD_CODE>DA20</OTD_CODE>\r\n" + 
+				"	            <C_STATUS></C_STATUS>\r\n" + 
+				"	            <OTD_CODE_DESC>DELIVERY CENTER IN</OTD_CODE_DESC>\r\n" + 
+				"	            <ACT_DATE>00000000</ACT_DATE>\r\n" + 
+				"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+				"	            <EST_DATE>20191105</EST_DATE>\r\n" + 
+				"	        </T_DATA>\r\n" + 
+				"	        <T_DATA>\r\n" + 
+				"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+				"	            <C_STATUS></C_STATUS>\r\n" + 
+				"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+				"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+				"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+				"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+				"	        </T_DATA>\r\n" + 
+				"	        <T_DATA>\r\n" + 
+				"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+				"	            <C_STATUS></C_STATUS>\r\n" + 
+				"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+				"	            <ACT_DATE>20191018</ACT_DATE>\r\n" + 
+				"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+				"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+				"	        </T_DATA>\r\n" + 
+				"	    </payload>\r\n" + 
+				"	</request>\r\n" + 
+				"";
+		try {
+			InterfaceRequestMessage message = new InterfaceRequestMessage();
+
+			// exchange body XML -> JSON string으로 변환
+			// String exchange_body = exchange.getIn().getBody(String.class);
+			JSONObject xmlJSONObj = XML.toJSONObject(xmlString, XMLParserConfiguration.KEEP_STRINGS);
+			String xmlJSONObjString = xmlJSONObj.toString();
+
+			Map<String, Object> bodyMap = new Gson().fromJson(xmlJSONObjString, Map.class);
+
+			Map<String, Object> headerMap	= (Map<String, Object>) ((Map)bodyMap.get(SystemCommonConstants.ROOT_KEY)).get(SystemCommonConstants.HEADER_KEY);
+			Map<String, Object> payloadMap	= (Map<String, Object>) ((Map)bodyMap.get(SystemCommonConstants.ROOT_KEY)).get(SystemCommonConstants.PAYLOAD_KEY);
+
+			message.setHeader(headerMap);
+			message.setIfTotCnt(payloadMap.get(SystemCommonConstants.PAYLOAD_KEY_TOT_COUNT) == null ? 0 : Double.valueOf(payloadMap.get(SystemCommonConstants.PAYLOAD_KEY_TOT_COUNT).toString()).intValue());
+
+			for(Iterator<String> iter = payloadMap.keySet().iterator(); iter.hasNext();) {
+				String key = iter.next();
+				// ifTotCnt key가 아니면 payload body로 처리한다.
+				if(!SystemCommonConstants.PAYLOAD_KEY_TOT_COUNT.equalsIgnoreCase(key)) {
+					Map<String, Object> payloadBodyMap = new HashMap<String, Object>();
+					payloadBodyMap.put(key, payloadMap.get(key));
+					// interface message의 body map으로 넣음
+					message.setBody(payloadBodyMap);
+					break;
+				}
+			}
+
+		} catch (Exception e) {
+			// TODO: handle exception
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void gson_typeadapter_test() throws Exception {
+		try {
+			final GsonBuilder gsonBuilder = new GsonBuilder();
+			gsonBuilder.registerTypeAdapter(Map.class, new JsonStringTypeAdapter());
+			Gson gson = gsonBuilder.create();
+			Map test = new HashMap<>();
+			test.put("num", 20191015);
+			test.put("str", "2505820484399.392394949292");
+
+			String json = "{\"num\" : 20191015, \"str\" : \"2505820484399.392394949292\"}";
+
+			System.out.println("[TestCase] >> gson_typeadapter_test :: " + gson.fromJson(json, Map.class));
+			System.out.println("[TestCase] >> gson_typeadapter_test none :: " + new Gson().fromJson(json, Map.class));
+
+			System.out.println("[TestCase] >> gson_typeadapter_test :: " + gson.toJson(test));
+			System.out.println("[TestCase] >> gson_typeadapter_test none :: " + new Gson().toJson(test));
+			System.out.println("------------------------------------------------");
+
+
+			Gson gson2 = new GsonBuilder().registerTypeAdapter(Double.class,  new JsonSerializer<Double>() {   
+				@Override
+				public JsonElement serialize(Double src, Type typeOfSrc, JsonSerializationContext context) {
+					if(src == src.longValue()) 
+						return new JsonPrimitive(new BigDecimal(src.longValue()).toPlainString());
+					else if(src == src.doubleValue())
+						return new JsonPrimitive(new BigDecimal(src.doubleValue()).toPlainString());
+					else if(src == src.intValue())
+						return new JsonPrimitive(new BigDecimal(src.intValue()).toPlainString());
+					return new JsonPrimitive(src);
+				}
+			}).create();
+			System.out.println("[TestCase] >> gson_typeadapter_test :: " + gson2.toJson(test));
+
+		} catch (Exception e) {
+			// TODO: handle exception
+			e.printStackTrace();
+		}
+	}
+
+	public class JsonDouble2StringTypeAdapter extends TypeAdapter<Double> {
+		@Override
+		public void write(JsonWriter out, Double value) throws IOException {
+
+		}
+		@Override
+		public Double read(JsonReader in) throws IOException {
+
+			return null;
+		}
+
+	}
+
+	@SuppressWarnings("rawtypes")
+	public class JsonStringTypeAdapter extends TypeAdapter<Map> {
+		@Override
+		public void write(JsonWriter out, Map value) throws IOException {
+			System.out.println("[TestCase.JsonStringTypeAdapter] >> write :: " + value);
+			//
+		}
+
+		@Override
+		public Map read(JsonReader in) throws IOException {
+			final Map<String, Object> map = new HashMap<>();
+
+			JsonToken token = in.peek();
+			if (token.equals(JsonToken.BEGIN_OBJECT)) {
+				in.beginObject();
+				while (!in.peek().equals(JsonToken.END_OBJECT)) {
+					if (in.peek().equals(JsonToken.NAME)) {
+						if(in.peek().equals(JsonToken.NUMBER))
+							map.put(in.nextName(), new BigDecimal(in.nextDouble()).toPlainString());
+						else 
+							map.put(in.nextName(), in.nextString());
+					}
+				}
+				in.endObject();
+			}
+			return map;
+		}
+	}
+
+	@Test
+	public void lamda() throws Exception {
+		try {
+			Func sub = (int a, int b) -> a-b;
+			Func add = (int a, int b) -> a+b;
+
+			int result = sub.calc(2, 5) + add.calc(3, 2);
+			System.out.println("[TestCase] >> lamda :: " + result);
+
+			Map<String, Object> map = new HashMap<>();
+			map.put("aaa", "111");
+			map.put("bbb", "222");
+			map.put("ccc", "333");
+			map.keySet().stream().forEachOrdered((key) -> {
+				System.out.println("[TestCase] >> lamda :: " + key);
+			});
+		} catch (Exception e) {
+			// TODO: handle exception
+			e.printStackTrace();
+		}
+	}
+	@FunctionalInterface
+	public interface Func {
+		public int calc(int a, int b);
+	}
+
+	//Data Converter Test
+	@Test
+	public void JsonToXml() throws Exception{
+		try {
+			String json_str = "{"
+					+ "\"name\":\"b\","
+					+ "\"address\":\"-3\","
+					+ "\"age\":\"yyyy-MM-dd HH:mm:ss\","
+					+ "\"grade\":\"-4\","
+					+ "\"cur_dt\":\"2019-10-22 13:04:40\""
+					+ "}";
+
+			JSONObject json_obj = new JSONObject(json_str);
+			String xml = XML.toString(json_obj);
+
+			System.out.println(xml);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void JsonToMap() throws Exception{
+		try {
+			String json_str = "{"
+					+ "\"name\":\"b\","
+					+ "\"address\":\"-3\","
+					+ "\"age\":\"yyyy-MM-dd HH:mm:ss\","
+					+ "\"grade\":\"-4\","
+					+ "\"cur_dt\":\"2019-10-22 13:04:40\""
+					+ "}";
+
+			ObjectMapper mapper = new ObjectMapper();
+			Map<String, Object> map= new HashMap<String, Object>();
+			map = mapper.readValue(json_str, new TypeReference<Map<String, Object>>() {});
+
+			System.out.println(map.toString());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void MapToJson() throws Exception{
+		try {
+			Map<String, Object> map = new HashMap<String, Object>();
+			map.put("name", "kim");
+			map.put("age", 60);
+			map.put("grade", "A");
+			map.put("day", new Date());
+
+			ObjectMapper mapper = new ObjectMapper();
+			String json_str = mapper.writeValueAsString(map);
+			System.out.println(json_str);
+			json_str = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+			System.out.println(json_str);
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void MapToXml() throws Exception{
+		try {
+			Map<String, Object> map = new HashMap<String, Object>();
+			map.put("name", "kim");
+			map.put("age", 60);
+			map.put("grade", "A");
+			map.put("daystr", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+			map.put("day", new Date());
+
+			ObjectMapper mapper = new ObjectMapper();
+			String json_str = mapper.writeValueAsString(map);
+			System.out.println(json_str);
+
+			JSONObject json_obj = new JSONObject(json_str);
+			String xml = XML.toString(json_obj);
+
+			System.out.println(xml);
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void XmlToJson() throws Exception{
+		try {
+			String xmlString = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n" +
+					"	<request>\r\n" + 
+					"	    <header>\r\n" + 
+					"	        <ifId>IF_CN_ERP_CXP_0020</ifId>\r\n" + 
+					"	        <ifVer>v001</ifVer>\r\n" + 
+					"	        <ifSenderGrp>CN</ifSenderGrp>\r\n" + 
+					"	        <ifSender>ERP</ifSender>\r\n" + 
+					"	        <ifReceiverGrp>CN</ifReceiverGrp>\r\n" + 
+					"	        <ifReceiver>CXP</ifReceiver>\r\n" + 
+					"	        <ifTrackingId>4bc68e26-f318-4812-ae29-ac1ea8ea4e33</ifTrackingId>\r\n" + 
+					"	        <ifDateTime>20191218055418</ifDateTime>\r\n" + 
+					"	    </header>\r\n" + 
+					"	    <payload>\r\n" + 
+					"	        <ifTotCnt>7</ifTotCnt>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191015</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA30</OTD_CODE>\r\n" + 
+					"	            <C_STATUS>X</C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>CUSTOMS CLEARANCE</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>DA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>COMPOUND IN</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>DA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>DELIVERY CENTER IN</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>00000000</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>20191105</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191018</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	    </payload>\r\n" + 
+					"	</request>\r\n" + 
+					"";
+
+			JSONObject xmlJSONObj = XML.toJSONObject(xmlString.toString());
+			String xml_json_str = xmlJSONObj.toString();
+			System.out.println(xml_json_str);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void XmlToMap() throws Exception{
+		try {
+			String xmlString ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n" +
+					"	<request>\r\n" + 
+					"	    <header>\r\n" + 
+					"	        <ifId>IF_CN_ERP_CXP_0020</ifId>\r\n" + 
+					"	        <ifVer>v001</ifVer>\r\n" + 
+					"	        <ifSenderGrp>CN</ifSenderGrp>\r\n" + 
+					"	        <ifSender>ERP</ifSender>\r\n" + 
+					"	        <ifReceiverGrp>CN</ifReceiverGrp>\r\n" + 
+					"	        <ifReceiver>CXP</ifReceiver>\r\n" + 
+					"	        <ifTrackingId>4bc68e26-f318-4812-ae29-ac1ea8ea4e33</ifTrackingId>\r\n" + 
+					"	        <ifDateTime>20191218055418</ifDateTime>\r\n" + 
+					"	    </header>\r\n" + 
+					"	    <payload>\r\n" + 
+					"	        <ifTotCnt>7</ifTotCnt>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191015</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA30</OTD_CODE>\r\n" + 
+					"	            <C_STATUS>X</C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>CUSTOMS CLEARANCE</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>DA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>COMPOUND IN</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191021</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>DA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>DELIVERY CENTER IN</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>00000000</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000011</VHCLE>\r\n" + 
+					"	            <EST_DATE>20191105</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA10</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>SHIPPING</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191009</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	        <T_DATA>\r\n" + 
+					"	            <OTD_CODE>CA20</OTD_CODE>\r\n" + 
+					"	            <C_STATUS></C_STATUS>\r\n" + 
+					"	            <OTD_CODE_DESC>PORT ARRIVAL</OTD_CODE_DESC>\r\n" + 
+					"	            <ACT_DATE>20191018</ACT_DATE>\r\n" + 
+					"	            <VHCLE>0000000013</VHCLE>\r\n" + 
+					"	            <EST_DATE>00000000</EST_DATE>\r\n" + 
+					"	        </T_DATA>\r\n" + 
+					"	    </payload>\r\n" + 
+					"	</request>\r\n" + 
+					"";
+
+			JSONObject xmlJSONObj = XML.toJSONObject(xmlString.toString());
+			String xml_json_str = xmlJSONObj.toString();
+			ObjectMapper mapper = new ObjectMapper();
+			Map<String,Object> map = new HashMap<String, Object>();
+			map = mapper.readValue(xml_json_str, new TypeReference<Map<String, Object>>() {});
+			System.out.println(map.toString());
+			Map<String, Object> headerMap = (Map<String, Object>) ((Map)map.get("request")).get("header");
+			Map<String, Object> bodyMap = (Map<String, Object>) ((Map)map.get("request")).get("payload");
+			System.out.println(headerMap.toString());
+			System.out.println(bodyMap.toString());
+			//String res = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+			//System.out.println(res);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void convert_test() {
+		try {
+			CamelContext ctx = new DefaultCamelContext();
+
+			ctx.addRoutes(new RouteBuilder() {
+				@Override
+				public void configure() throws Exception {
+					/*from("quartz2://XCONNECT_EAI_SERVER_RESOURCE_JOB/XCONNECT_EAI_SERVER_RESOURCE_HOUR_JOB?cron=*+*+*+*+*+?")
+					.process(new Processor() {
+						@Override
+						public void process(Exchange exchange) throws Exception {
+							//String body = "";
+							SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMmm HH:mm:ss");
+							System.out.println(sdf.format(new Date()));
+						}
+					})
+					.bean(TrackingIdGenerator.class, "getTrackingId")
+					.process(new Processor() {
+						@Override
+						public void process(Exchange exchange) throws Exception {
+							System.out.println(exchange.getProperty(SystemCommonConstants.HEADER_KEY_TX_ID).toString());
+						}
+					});*/
+					from("timer://httptest?period=5000&delay=1000&repeatCount=3")
+					.process(new Processor() {
+
+						@Override
+						public void process(Exchange exchange) throws Exception {
+							try {
+								System.out.println("process");
+								String targetUrl = "https://localHost:8081";
+								HttpGet request = new HttpGet(targetUrl);
+								CloseableHttpClient httpClient = HttpClients.createDefault();
+								CloseableHttpResponse response = httpClient.execute(request);
+								System.out.println("연결됨");
+								System.out.println(response.getProtocolVersion());              // HTTP/1.1
+								System.out.println(response.getStatusLine().getStatusCode());   // 200
+								System.out.println(response.getStatusLine().getReasonPhrase()); // OK
+								System.out.println(response.getStatusLine().toString());        // HTTP/1.1 200 OK
+							} catch (Exception e) {
+								System.out.println("연결 안됨");
+								e.printStackTrace();
+							}
+						}
+					} )
+					.to("mock:result");
+				}
+			});
+
+			ctx.start();
+
+			Thread.sleep(5 * 60 * 1000);
+			ctx.stop();
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void test1() throws Exception {
+		try {
+			String double_str = "2147483648L";
+			double_str = double_str.replaceAll("[^0-9]", "");
+			double dd = Double.valueOf(double_str).doubleValue();
+
+			String res = BigDecimal.valueOf(dd).toPlainString();
+
+			System.out.println("[TestCase] >> test1 :: " + res);
+		} catch (Exception e) {
+			// TODO: handle exception
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void test2() throws Exception {
+		try {
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm.ss");
+			Calendar time = Calendar.getInstance();
+			System.out.println(time.getTimeZone().getOffset(time.getTimeInMillis()));
+			System.out.println(time.getTimeInMillis());
+			Date date = time.getTime();
+			System.out.println("DATE: "+ sdf.format(date));
+			time.add(Calendar.MILLISECOND, -time.getTimeZone().getOffset(time.getTimeInMillis()));
+			date = time.getTime();
+			System.out.println(time.getTimeInMillis());
+			System.out.println(date.getTime());
+			System.out.println("DATE: "+ sdf.format(date));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	public enum DevType{
+		MOBILE("모바일", "0"), WEB("웹", "1"), SERVER("서버", "2");
+
+		private String type;
+		private String index;
+		private String etc;
+		
+		private DevType(String type, String index) {
+			this.type = type;
+			this.index = index;
+		}
+		public String getType() {
+			return type;
+		}
+		public void setType(String type) {
+			this.type = type;
+		}
+		public String getIndex() {
+			return index;
+		}
+		public void setIndex(String index) {
+			this.index = index;
+		}
+		public String getEtc() {
+			return etc;
+		}
+		public void setEtc(String etc) {
+			this.etc = etc;
+		}
+		
+	}
+
+	public DevType type;
+
+	public void setType(String type) {
+		this.type = DevType.valueOf(type);
+	}
+
+	@Test
+	public void enumtest() throws Exception {
+		try {
+			String command = "mobile";
+			type = DevType.valueOf(command.toUpperCase());
+			System.out.println(type.getType()); //모바일
+			System.out.println(type.getIndex()); //0
+			System.out.println(type.getEtc()); //null
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	HazelCastManager hazelCastManager;
+	@Test
+	public void hazelcast_test() throws Exception{
+		try {
+			Map<String, Object> map = hazelCastManager.getInstance().getMap("testdata");
+			System.out.println(map.toString());
+			map.put("a", 1);
+			map.put("b", 2);
+			map.put("c", 3);
+
+			Map<String, Object> getMap = hazelCastManager.getInstance().getMap("testdata");
+			System.out.println(getMap.toString());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void lib_function_test() throws Exception {
+		try {
+			String jsonString = "{\"payload\": {\"is_in\": {\"name\": \"kang\",\"sername\": \"shinshug\"},\"t_data\": {\"data\": \"test\",\"code\": \"a001\"}}}";
+			Map<String, Object> jsonMap = new Gson().fromJson(jsonString, Map.class);
+			String expression = " IF(${payload.is_in.name} == 'kang2', ${payload.t_data.code}, 'fail' )  ";
+
+			expression = expression.replaceAll("[.]", "__DOT__");
+			System.out.println("[TestCase] >> lib_function_test :: expression => " + expression);
+			Expression action = new Expression();
+			action.setExpression( expression );
+			Object resObject = ExpressionXpathFieldAction.process(action, jsonMap);
+			System.out.println("result = " + resObject);
+
+		} catch (Exception e) {
+			LOG.error("[TestCase] >> user_func_regist :: Error > " + CommonUtils.getPrintStackTrace(e));
+		}
+	}
+	@Test
+	public void char_test() throws Exception {
+		try {
+			String str = ".";
+			str.charAt(0);
+			System.out.println("[TestCase] >> char_test :: " + (int)(str.charAt(0) ));
+		} catch (Exception e) {
+			// TODO: handle exception
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void camel_test() {
+		System.out.println("camel test");
+		try {
+			CamelContext camel_ctx = new DefaultCamelContext();
+			String bean_xml = "<routes xmlns=\"http://camel.apache.org/schema/spring\">\r\n" + 
+					"    <route id=\"test_route\">\r\n" + 
+					"        <from uri=\"timer:bar?period=1000\"/>\r\n" + 
+					"        <log message=\"bar routes.....\" />" +
+					"    </route>\r\n" + 
+					//					"	 <route id=\"route1\">\r\n" + 
+					//					"        <from uri=\"timer:bar1?period=1000\"/>\r\n" + 
+					//					"        <log message=\"bar1 routes.....\" />" +
+					//					"    </route>\r\n" +
+					"</routes>";
+
+			RoutesDefinition routes = camel_ctx.loadRoutesDefinition(new ByteArrayInputStream(bean_xml.getBytes("UTF-8")));
+			//routes.setId("test_route");
+			System.out.println(routes.getId());
+			routes.description("테스트 라우터 입니다.");
+			List<RouteDefinition> routeList = routes.getRoutes();
+			System.out.println("####RouteSize: " + routeList.size());
+			for(RouteDefinition route : routeList) {
+				RouteDefinitionHelper.sanityCheckRoute(route);
+				System.out.println("##1: " + route.getId());
+				camel_ctx.addRouteDefinition(route);
+				System.out.println("##2: " + route.getId());
+				camel_ctx.startRoute(route.getId());
+			}
+			Thread.sleep(3000*3);
+			System.out.println("라우터 스탑하자");
+			camel_ctx.stopRoute("test_route");
+			camel_ctx.removeRoute("test_route");
+			Thread.sleep(3000*3);
+			System.out.println("라우터 다시시작하자");
+			camel_ctx.startRoute("test_route");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void springbeanManager_test() {
+		try {
+			String restAdapterString = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n" + 
+					"http://www.springframework.org/schema/beans/spring-beans.xsd\r\n " +  
+					"<route>\r\n" + 
+					"	<from uri=\"jetty://https://10.10.152.252:8081/service/rest\"/>\r\n" +
+					"	<filter >\r\n" + 
+					"		<simple>${in.header.PROCESS_STOP}</simple>\r\n" + 
+					"		<stop/>\r\n" + 
+					"	</filter>\r\n" + 
+					"	<to uri=\"XCONNECTMQ:queue:JDBC_DB_DATA_0001\"/>\r\n" + 
+					"</route>\r\n" + 
+					"";
+			String soapServerStr = "";
+			restAdapterString = restAdapterString.replace("\r\n", "");
+			//restAdapterString = restAdapterString.trim();
+			String testurl = "//https://10.10.10.123:8888/service/aaa\"/>asasd";
+			String regex = ".*(jetty://https?):\\/\\/([^:\\/\\s]+)(:([^\\/]*))?((\\/[^\\s/\\/]+)*)?(\\\").*";
+			//String regex = "^https?:\\/\\/([^:\\/\\s]+)(:([^\\/]*))?((\\/[^\\s/\\/]+)*)?\\/([^#\\s\\?]*)(\\?([^#\\s]*))?(#(\\w*))?$";
+			Pattern urlPattern = Pattern.compile(regex);
+			Matcher mc = urlPattern.matcher(restAdapterString);
+			String targetUrl = "";
+			if(mc.matches()) {
+				//System.out.println("있다.");
+				String groupStr = mc.group();
+				String preRemoveStr = groupStr.substring(groupStr.indexOf("jetty://http"));
+				String postRemoveStr = preRemoveStr.substring(0, preRemoveStr.indexOf("\""));
+				targetUrl = postRemoveStr.substring(postRemoveStr.indexOf("http"));
+				//System.out.println(groupStr);
+				//System.out.println(preRemoveStr);
+				//System.out.println(targetUrl);
+			}
+			targetUrl = "http://10.10.34.167:5631";
+			//HttpGet request = new HttpGet(targetUrl);
+			try {
+				Socket socket = new Socket();
+				SocketAddress addr = new InetSocketAddress("test.salesforce.com", 443);
+				socket.connect(addr, 5000);
+				
+				/*CloseableHttpClient httpClient = HttpClients.createDefault();
+				CloseableHttpResponse response = httpClient.execute(request);*/
+				 
+				/*URL url = new URL(targetUrl);
+				HttpURLConnection urlConn = (HttpURLConnection) url.openConnection();
+				urlConn.connect();*/
+				//System.out.println(url.getHost() + ":" + url.getPort());
+				System.out.println("성공");
+			} catch(Exception e) {
+				System.out.println("실패");;
+				e.printStackTrace();
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void timezone() {
+		List<Map<String, Object>> resMapList = new ArrayList<Map<String,Object>>();
+		Map<String, Object> map1 = new HashMap<String, Object>();
+		map1.put("chk", 10);
+		resMapList.add(map1);
+		Map<String, Object> map2 = new HashMap<String, Object>();
+		map2.put("chk", 15);
+		resMapList.add(map2);
+		
+		for(Map<String, Object> map : resMapList) {
+			if(Integer.valueOf(map.get("chk").toString()) >= 10) {
+				map.put("res", "T");
+			}else if(Integer.valueOf(map.get("chk").toString()) >= 5) {
+				map.put("res", "F");
+			}
+		}
+		
+		System.out.println(map1.get("res").toString());
+		System.out.println(map2.get("res").toString());
+		System.out.println(map1.toString());
+//		Set<Entry<String, Object>> ent = map.entrySet();
+//		for(Entry<String, Object> entry: ent) {
+//			System.out.println("key: " + entry.getKey() + "value: " + entry.getValue());
+//		}
+		//		Set<String> keyset = map.keySet();
+		//		Iterator<String> iter = keyset.iterator();
+		//		while(iter.hasNext()) {
+		//			String key = iter.next();
+		//			System.out.println("key: " + key + "value: " + map.get(key));
+		//		}
+
+	}
+
+
+	//@Test
+	public RestHighLevelClient client() {
+		try {
+			String EShost = "10.10.152.252";
+			int ESport = 9201;
+			RestClientBuilder restClientBuilder = RestClient.builder(new HttpHost(EShost, ESport));
+			RestHighLevelClient client = new RestHighLevelClient(restClientBuilder);
+
+			return client;
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	@SuppressWarnings("resource")
+	public TransportClient ts_client() {
+		try {
+			String EShost = "10.10.152.252";
+			int Tsport = 9301;
+			Settings settings = Settings.builder().put("client.transport.ignore_cluster_name", true).build();
+			TransportClient tsclient = new PreBuiltTransportClient(settings).addTransportAddress(new TransportAddress(InetAddress.getByName(EShost), Tsport));
+
+			return tsclient;
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	@Test
+	public void esInsert() {
+		RestHighLevelClient client = client();
+		Map<String, Object> map = new HashMap<String, Object>();
+		map.put("a", "a1");
+		map.put("b", "a2");
+		map.put("c", "a3");
+		map.put("d", "a4");
+		map.put("e", "a5");
+
+		try {
+			IndexRequest request = new IndexRequest("test_index","_doc","test1").source(map);
+			IndexResponse response = client.index(request, RequestOptions.DEFAULT);
+			System.out.println(response.getResult().name());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void esSelect() {
+		RestHighLevelClient client = client();
+		TransportClient tsclisnt = ts_client();
+		try {
+			//			GetRequest request = new GetRequest("test_index", "_doc", "1PT2HXAB5soUTnbditTK");
+			//			GetResponse response = client.get(request, RequestOptions.DEFAULT);
+			//			Map<String, Object> map = new HashMap<String, Object>();
+			//			if(response.isExists()) {
+			//				map = response.getSourceAsMap();
+			//				System.out.println(map.toString());
+			//				System.out.println(response.getVersion());
+			//			}
+			String sql_query = String.format("SELECT * FROM %s WHERE %s", "test_index", "a = 'a1' AND b = 'a2'");
+			//String sql_query = "DELETE FROM test_index";
+			SqlElasticRequestBuilder select = ESActionFactory.create(tsclisnt, sql_query).explain();
+
+			SearchHits searchResponse = ((SearchResponse)select.get()).getHits();
+			long total_found_num = searchResponse.getTotalHits();
+			System.out.println("결과 수: " + total_found_num);
+
+			//List<Map<String, Object>> resultList = new ArrayList<Map<String,Object>>();
+			for(Iterator<SearchHit> iter = searchResponse.iterator(); iter.hasNext();) {
+				SearchHit hit = iter.next();
+				Map<String, Object> resultMap = hit.getSourceAsMap();
+				System.out.println(hit.getId() + ": " + resultMap.toString());
+
+			}
+
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+
+
+	}
+
+	@Test
+	public void esbulkInsert() {
+		RestHighLevelClient client = client();
+		List<Map<String, Object>> mapList = new ArrayList<Map<String,Object>>();
+		Map<String, Object> map1 = new HashMap<String, Object>();
+		map1.put("a", "a1");
+		map1.put("b", "a2");
+		map1.put("c", "a3");
+		map1.put("d", "a4");
+		map1.put("e", "a5");
+		Map<String, Object> map2 = new HashMap<String, Object>();
+		map2.put("a", "b1");
+		map2.put("b", "b2");
+		map2.put("c", "b3");
+		map2.put("d", "b4");
+		map2.put("e", "b5");
+		mapList.add(map1);
+		mapList.add(map2);
+		try {
+			BulkRequest bulkrequest = new BulkRequest();
+			for(Map<String, Object> map : mapList) {
+				IndexRequest indexreq = new IndexRequest("test_index", "_doc");
+				indexreq.source(map);
+				bulkrequest.add(indexreq);
+			}
+			bulkrequest.timeout(TimeValue.timeValueMinutes(2));
+			BulkResponse bulkresponse = client.bulk(bulkrequest, RequestOptions.DEFAULT);
+			
+			System.out.println("burkinert cnt: " + bulkresponse.getItems().length);
+			//실패한 메시지 확인
+			int fail_cnt = 0;
+			List<Map> fail_msg_list = new ArrayList<Map>();
+			for(BulkItemResponse res: bulkresponse.getItems()) {
+				if(res.isFailed()) {
+					System.out.println(res.getId());
+					System.out.println(res.getIndex());
+					System.out.println(res.getType());
+					System.out.println(res.isFailed());
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void esUpdate() {
+		try {
+			Map<String, Object> map2 = new HashMap<String, Object>();
+			map2.put("a", "b1");
+			map2.put("b", "b2");
+			map2.put("c", "b3");
+			map2.put("d", "b4");
+			map2.put("e", "b5");
+			RestHighLevelClient client= client();
+			UpdateRequest updatereq = new UpdateRequest("test_index", "_doc", "test1");
+			updatereq.doc(map2);
+			UpdateResponse updateres = client.update(updatereq, RequestOptions.DEFAULT);
+			System.out.println(updateres.getResult().name());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void esDelete() {
+		try {
+			RestHighLevelClient client = client();
+			DeleteRequest deletereq = new DeleteRequest("test_index", "_doc", "test1");
+			DeleteResponse deleteres = client.delete(deletereq, RequestOptions.DEFAULT);
+
+			System.out.println(deleteres.getResult().name());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void lamdatest() {
+		MyFunction f = (int a, int b) ->a>b? a:b;
+		int big = f.max(5, 3);
+		System.out.println(big);
+	}
+	
+	@FunctionalInterface
+	interface MyFunction{
+		public abstract int max(int a, int b);
+	}
+	
+	@Test
+	public void datetest() throws ParseException {
+		Object date= "2020-02-28T05:52:32.388Z";
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+		Date d = sdf.parse(date.toString());
+		sdf.applyPattern("yyyy-MM-dd HH:mm:ss");
+		System.out.println(sdf.format(d));
+	}
+	
+	@Test
+	public void ahtest() throws ParseException {
+		String delimiter	= "^||^";
+		String delimiter_regex	= "\\^[|][|]\\^";
+		String str1 = "asdfd";
+//		str1 = str1 + "\n" + delimiter + "\n" + "pad1";
+//		str1 = str1 + "\n" + delimiter + "\n" + "pad2";
+//		str1 = str1 + "\n" + delimiter + "\n" + "pad3";
+		System.out.println(str1);
+		String[] result = str1.split(delimiter_regex);
+		for(String res : result)
+			System.out.println(res);
+	}
+	
+	@Test
+	public void listcontains() throws ParseException {
+		String ip = "";
+		String originUrl ="";
+		try {
+			ip = InetAddress.getLocalHost().getHostAddress();
+			originUrl = "http://" + ip + ":" + String.valueOf(8081);
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+		System.out.println(originUrl);
+	}
+	
+	@Test
+	public void duration() throws ParseException {
+		CamelContext ctx = new DefaultCamelContext();
+		try {
+			ctx.addRoutes(new RouteBuilder() {
+				
+				@Override
+				public void configure() throws Exception {
+					from("timer://httptest?period=1000&delay=1000&repeatCount=1000")
+					.process(new Processor() {
+						@Override
+						public void process(Exchange exchange) throws Exception {
+							System.out.println("route....");
+						}
+					});
+				}
+			});
+			
+			ctx.start();
+			List<Route> routes = ctx.getRoutes();
+			System.out.println(routes.size());
+			for(Route route : routes) {
+				System.out.println(route.getId());
+			}
+			
+			RouteDefinition routedef = ctx.getRouteDefinition("route1");
+			ServiceStatus prestatus = routedef.getStatus(ctx);
+			System.out.println("라우터 상태: " + prestatus.isStarted());
+			Thread.sleep(5000);
+			ctx.stopRoute("route1");
+			ServiceStatus afterstatus = routedef.getStatus(ctx);
+			System.out.println("라우터 상태: " + afterstatus.isStarted());
+			Thread.sleep(5000);
+			ctx.startRoute("route1");
+			ServiceStatus afterstatus1 = routedef.getStatus(ctx);
+			System.out.println("라우터 상태: " + afterstatus1.isStarted());
+			Thread.sleep(1000000);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+	}
+	
+	@Test
+	public void property() throws ParseException {
+		try {
+			String success_file_path = "C:\\Users\\A932060\\eclipse-workspace\\XConnect_Server\\dist\\conf\\test.properties";
+			File file = new File(success_file_path);
+			FileInputStream is = new FileInputStream(file);
+			Properties props = new Properties();
+			props.load(is);
+			System.out.println(props.getProperty("SERVER_ID"));
+			props.setProperty("test", "testproperty");
+			props.remove("test");
+			props.store(new FileOutputStream(file), "writeproperty");
+			
+			props.list(System.out);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@Test
+	public void day() throws Exception {
+		try {
+			String wsdlUrl = "http://10.25.71.70:3333/testws?wsdl";
+			String str = IOUtils.toString(new URL(wsdlUrl).openStream(), StandardCharsets.UTF_8.name());
+			System.out.println(str);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+}
