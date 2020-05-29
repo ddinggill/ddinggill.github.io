@@ -1,0 +1,1166 @@
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.common.util; 
+
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.PrintStream;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.io.FileUtils;
+import org.json.JSONObject;
+import org.json.XML;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.util.ObjectUtils;
+
+import com.google.gson.Gson;
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.elasticsearch.util.EsDocumentBuilder;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.service.auth.vo.AuthorizationInfoVO;
+import com.xconnect.eai.server.service.auth.vo.AuthorizationInfoVO.AUTHMETHOD;
+
+import inet.ipaddr.IPAddress;
+import inet.ipaddr.IPAddressString;
+
+/**
+ * <pre>
+ * com.eai.server.camel.util 
+ *    |_ CommonUtils.java
+ * 
+ * </pre>
+ * @date : 2019. 10. 29. 오후 1:17:24
+ * @version : 
+ * @author : A931744
+ */
+
+public class CommonUtils {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CommonUtils.class);
+
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Global UID 생성
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : getGlobalUId
+	 * @date : 2019. 10. 29.
+	 * @author : A931744
+	 * @history : 
+	 *	-----------------------------------------------------------------------
+	 *	변경일				작성자						변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 10. 29.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * 
+	 * @return time(17) + "_" + 5자리 난수 + "_" + 6자리UUID (17 + 1 + 5 + 1 + 6 = 30 length) string값
+	 */
+	public static String getGlobalUId() {
+
+		try {
+			int randomNumber = -1;
+			while ((randomNumber = ThreadLocalRandom.current().nextInt(100000)) < 10000)
+				;
+
+			String strRndUid = UUID.randomUUID().toString().replaceAll("-", "").substring(3, 9);
+			String init_time = new SimpleDateFormat("yyyyMMddHHmmssSSS").format(new Date());
+			String strGlobalUid = init_time + "_" + String.valueOf(randomNumber) + "_" + strRndUid;
+
+			return strGlobalUid;
+		} catch (Exception e) {
+			return UUID.randomUUID().toString();
+		}
+	}
+
+	public static String getRandomId(int length) {
+		try {
+			return UUID.randomUUID().toString().replaceAll("-", "").substring(0, length);
+		} catch (Exception e) {
+			return "";
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : OAUTH 발급을 위한 clientId & clientSecret 랜덤 생성 메서드
+	 * 2. 처리내용 : 랜덤생성한 clientId & clientSecret 를 Map에 담아 리턴 (각각 64 byte)
+	 * </pre>
+	 * @Method Name : getRandomClientIdSecret
+	 * @date : 2020. 3. 16.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 3. 16.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @return
+	 * @throws Exception
+	 */
+	public static Map<String, String> getRandomClientIdSecret() throws Exception {
+		try {
+			Map<String, String> authInfoMap = new HashMap<>();
+			String clientId = UUID.randomUUID().toString().replaceAll("-", "").toUpperCase() + UUID.randomUUID().toString().replaceAll("-", "").toUpperCase();
+			String cleintSecret = UUID.randomUUID().toString().replaceAll("-", "").toUpperCase() + UUID.randomUUID().toString().replaceAll("-", "").toUpperCase();
+
+			authInfoMap.put("clientId", clientId);
+			authInfoMap.put("clientSecret", cleintSecret);
+
+			return authInfoMap;
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw e;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Stack trace Object를 String으로 변환
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : getPrintStackTrace
+	 * @date : 2019. 11. 1.
+	 * @author : A931744
+	 * @history : 
+	 *	-----------------------------------------------------------------------
+	 *	변경일				작성자						변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 11. 1.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * 
+	 * @param clsObject stack trace object
+	 * @return
+	 */
+	public static String getPrintStackTrace(Object clsObject) {
+		ByteArrayOutputStream clsOutStream = new ByteArrayOutputStream();
+		PrintStream printStream = new PrintStream(clsOutStream);
+		((Throwable) clsObject).printStackTrace(printStream);
+		return clsOutStream.toString();
+	}
+
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : 
+	 * {
+  "request": {
+    "COMPANY": "test company.",
+    "SENDER": "From A",
+    "IFID": "IF_TEST_0001",
+    "CORRELATIONID": "",
+    "IN_DATA": {
+      "T_WO_H": {
+        "ZCIFSER": "aaa",
+            .............
+  }
+	 *	형식의 JSON Map에서 'request.IN_DATA.T_WO_H' 키형식의 Depth key 값을 반환한다. (Like JavaScript)
+	 * 2. 처리내용 : ## root_key는 "" 값을 넣어야 한다.
+	 * </pre>
+	 * @Method Name : getValueByDepthKey
+	 * @date : 2019. 12. 6.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 6.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param map
+	 * @param depth_key
+	 * @param root_key
+	 * @return
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static Object getValueByDepthKey(Map<String, Object> map, String depth_key, String root_key) {
+		try {
+			for(Iterator<String> iterator = map.keySet().iterator(); iterator.hasNext();) {
+				String key = iterator.next();
+				Object val = map.get(key);
+				
+				String this_root_depth_key = (!root_key.equals("")) ? root_key + "." + key : key;
+				if(this_root_depth_key.equalsIgnoreCase(depth_key)) {
+					//System.out.println("[CommonUtils] >> getValueByDepthKey :: Find Key --> " + this_root_depth_key + ", val = " + val + ", root_key = " + root_key);
+					return (val == null) ? "" : val;
+				}
+				if(val instanceof Map) {
+					Object findVal = getValueByDepthKey((Map)val, depth_key, root_key + (root_key.equals("") ? key : "."+key));
+					if(findVal != null) return findVal; 
+				} else if(val instanceof List) {
+					List sub_list = (List)val;
+					for(Iterator<Object> iter_list = sub_list.iterator(); iter_list.hasNext();) {
+						Object sub_item = iter_list.next();
+						if(sub_item instanceof Map) {
+							Object findVal = getValueByDepthKey((Map)sub_item, depth_key, root_key + (root_key.equals("") ? key : "."+key));
+							if(findVal != null) return findVal; 
+						}
+					}
+				}
+			}
+			return null;
+		} catch (Exception e) {
+			LOG.error("[CommonUtils] >> getValueByDepthKey :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return null;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : JSON Map에서 'request.IN_DATA.T_WO_H' 키형식의 Depth key에 값을 넣는다. (Like JavaScript)
+	 * 2. 처리내용 : ## root_key는 "" 값을 넣어야 한다.
+	 * </pre>
+	 * @Method Name : setValueAtDepthKey
+	 * @date : 2019. 12. 6.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 6.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param map
+	 * @param depth_key
+	 * @param value
+	 * @param root_key
+	 * @return
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static boolean setValueAtDepthKey(Map<String, Object> map, String depth_key, Object value, String root_key) {
+		try {
+			for(Iterator<String> iterator = map.keySet().iterator(); iterator.hasNext();) {
+				String key = iterator.next();
+				Object val = map.get(key);
+				
+				String this_root_depth_key = (!root_key.equals("")) ? root_key + "." + key : key;
+				if(this_root_depth_key.equalsIgnoreCase(depth_key)) {
+					//System.out.println("[CommonUtils] >> setValueAtDepthKey :: Find Key --> " + this_root_depth_key + ", val = " + val + ", root_key = " + root_key);
+					map.put(key, value);
+					return true;
+				}
+				if(val instanceof Map) {
+					boolean success = setValueAtDepthKey((Map)val, depth_key, value, root_key + (root_key.equals("") ? key : "."+key));
+					if(success) return true;
+				} else if(val instanceof List) {
+					//
+				}
+			}
+			return false;
+		} catch (Exception e) {
+			LOG.error("[CommonUtils] >> setValueAtDepthKey :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return false;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Key값을 바꿀 key name으로 변경한다.
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : changeKeyNameByDepthKey
+	 * @date : 2020. 1. 10.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 1. 10.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param map
+	 * @param depth_key : depth-key (aaa.bbb.ccc ...)
+	 * @param to_change_key_name : 변경할 key name
+	 * @param root_key : "" 로 넣는다.
+	 * @return
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static Object changeKeyNameByDepthKey(Map<String, Object> map, String depth_key, String to_change_key_name, String root_key) {
+		try {
+			for(Iterator<String> iterator = map.keySet().iterator(); iterator.hasNext();) {
+				String key = iterator.next();
+				Object val = map.get(key);
+				
+				String this_root_depth_key = (!root_key.equals("")) ? root_key + "." + key : key;
+				if(this_root_depth_key.equalsIgnoreCase(depth_key)) {
+					//System.out.println("[CommonUtils] >> changeKeyNameByDepthKey :: Find Key --> " + this_root_depth_key + ", val = " + val + ", root_key = " + root_key);
+					Object changed_val = map.remove(key);
+					if(to_change_key_name.equalsIgnoreCase("null")) {		// change key = null 이면 해당 element 삭제
+						map.putAll((Map<String, Object>)changed_val);
+					} else if(to_change_key_name.indexOf(".") > 0) {		// ~.~ 이면 new map으로 이동
+						String[] keys = to_change_key_name.split("[.]");
+						String key0 = keys[0], key1 = keys[1];
+						if(map.get(key0) == null) {
+							Map<String, Object> newMap = new HashMap<>();
+							newMap.put(key1, changed_val);
+							map.put(key0, newMap);
+						} else {
+							((Map)map.get(key0)).put(key1, changed_val);
+						}
+					} else {												// 아니면 단수 키 이름 변경
+						map.put(to_change_key_name, changed_val);
+					}
+					return (changed_val == null) ? "" : changed_val;
+				}
+				if(val instanceof Map) {
+					Object findVal = changeKeyNameByDepthKey((Map)val, depth_key, to_change_key_name, root_key + (root_key.equals("") ? key : "."+key));
+					if(findVal != null) return findVal;
+				} else if(val instanceof List) {
+					List sub_list = (List)val;
+					for(Iterator<Object> iter_list = sub_list.iterator(); iter_list.hasNext();) {
+						Object sub_item = iter_list.next();
+						if(sub_item instanceof Map) {
+							Object findVal = changeKeyNameByDepthKey((Map)sub_item, depth_key, to_change_key_name, root_key + (root_key.equals("") ? key : "."+key));
+							//if(findVal != null) return findVal; 
+						}
+					}
+				}
+			}
+			return null;
+		} catch (Exception e) {
+			LOG.error("[CommonUtils] >> changeKeyNameByDepthKey :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return null;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Object가 null 이면 defalut value를 반환하고 Null이 아니면 toString() 을 반환
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : strNvl
+	 * @date : 2019. 12. 27.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 27.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param obj
+	 * @param def_val
+	 * @return
+	 */
+	public static String strNvl(Object obj, String def_val) {
+		return (obj == null || obj.toString().isEmpty()) ? def_val : obj.toString();
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : 현재 날짜가 주말인지 여부 판단
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : isWeekEnd
+	 * @date : 2019. 12. 27.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 27.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @return
+	 */
+	public static boolean isWeekEnd() {
+		try {
+			Calendar cal = Calendar.getInstance();
+			cal.setTime(new Date());
+			if(cal.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY || cal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY)
+				return true;
+			else return false;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Bean XML 혹은 Camel Route XML에서 Bean ID, Route ID를 찾는다.
+	 * 2. 처리내용 : 각각의 ID를 찾아 List 로 반환
+	 * </pre>
+	 * @Method Name : findIdInXml
+	 * @date : 2019. 12. 31.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 31.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param xml
+	 * @param isBean : Bean XML일때는 TRUE, Camel Route XML 일때는 FALSE
+	 * @return : List<String> 반환
+	 * @throws Exception
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static List<String> findIdInXml(String xml, boolean isBean) throws Exception {
+		List<String> ids = new ArrayList<String>();
+
+		try {
+			JSONObject xmlJSONObj = XML.toJSONObject(xml);
+			String xmlJSONObjString = xmlJSONObj.toString();
+
+			Map<String, Object> xmlMap = new Gson().fromJson(xmlJSONObjString, Map.class);
+
+			String root_element = (isBean) ? "beans" : "routes";
+			String sub_element = (isBean) ? "bean" : "route";
+			Object rootMap = xmlMap.get(root_element);
+			Object sub_item = ObjectUtils.isEmpty(rootMap) ? null : ((Map)rootMap).get(sub_element);
+
+			if(sub_item instanceof List) {
+				List item_list = (List)sub_item;
+				item_list.stream().forEach((item) -> {
+					if(item instanceof Map) {
+						ids.add(((Map)item).get("id").toString());
+					}
+				});
+			} else if(sub_item instanceof Map) { 
+				ids.add(((Map)sub_item).get("id").toString());
+			} else {
+				// no route or bean in xml...
+			}
+			
+			///////////////////////////////////////////////
+			// Spring Bean에서 <bean> 제외한 <util:list>, <util:map>, <sslContextParameters>, <cxf:cxfEndpoint> 도 찾는다. (향후 ID를 찾을 element가 생기면 sub_element_list에 추가 바람)
+			if(isBean) {
+				String[] sub_element_list = {"util:list", "util:map", "util:properties", "sslContextParameters", "cxf:cxfEndpoint"};
+				for(String subElementName : sub_element_list) {
+					sub_item = ObjectUtils.isEmpty(rootMap) ? null : ((Map)rootMap).get(subElementName);
+					if(sub_item instanceof List) {
+						List item_list = (List)sub_item;
+						item_list.stream().forEach((item) -> {
+							if(item instanceof Map) {
+								ids.add(((Map)item).get("id").toString());
+							}
+						});
+					} else if(sub_item instanceof Map) { 
+						ids.add(((Map)sub_item).get("id").toString());
+					}
+				}
+			}
+			
+			return ids;
+		} catch (Exception e) {
+			LOG.error("[CommonUtils] >> findIdInXml :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return new ArrayList<String>();
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : java object deep copy
+	 * 2. 처리내용 : swallow copy시 async function에서 발생할 수 있는 concurrent exception을 방지한다.
+	 * </pre>
+	 * @Method Name : deepCopy
+	 * @date : 2020. 1. 3.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 1. 3.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param object
+	 * @return
+	 */
+	public static Object deepCopy(Object object) {
+		try {
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			ObjectOutputStream oos = new ObjectOutputStream(baos);
+			oos.writeObject(object);
+			ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+			ObjectInputStream ois = new ObjectInputStream(bais);
+			return ois.readObject();
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : indent로 구분된 YAML 형식의 SPEC을 이용하여 구조체를 생성
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : parseYamlSpec
+	 * @date : 2020. 1. 15.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 1. 15.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param spec_yml
+	 * @throws Exception
+	 * @return : SPEC map
+	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public static Map<String, Object> parseYamlSpec(String spec_yml) throws Exception {
+		LinkedHashMap<String, Object> specMap = new LinkedHashMap<>();
+		try {
+			// YAML sample
+			//
+			//ZGCN_MM_DTS_EX_003_DIH:Response 
+			//  ES_OUT 
+			//    E_IFRESULT 
+			//    E_IFFAILMSG 
+			//  T_HEAD 
+			//    row 
+			//      ZCIFSER 
+			//      ZCSTAT 
+			//      ZERTNMG 
+			//  T_COLOR 
+			//    row 
+			//      ZCIFSER 
+			//      ZCEXTC 
+			//      ZCINTC 
+			
+			String[] lines = spec_yml.split("\\r?\\n");
+			Map<Integer, String> depthInfoMap = new HashMap<>(); depthInfoMap.put(0, "");
+			int prev_indent_depth = 0;
+			for(String line : lines) {
+				if(line.trim().startsWith("#")) continue;	// Comment part...
+				if(line.trim().equals("")) continue; 		// Null part...
+				int indent_depth = checkIndent(line);
+				//System.out.println("line ::" + line + ", indent depth=" + indent_depth);
+				
+				if(indent_depth > prev_indent_depth) {	// sub item
+					depthInfoMap.put(indent_depth, depthInfoMap.get(prev_indent_depth) + "." + line.trim());
+					
+					String depth_key = depthInfoMap.get(prev_indent_depth);
+					Object prevMap = getValueByDepthKey(specMap, depth_key, "");
+					// parent depth map이 NULL이면 신규 Map 생성하여 put
+					if(prevMap == null || prevMap.toString().equals("")) {
+						LinkedHashMap thisMap = new LinkedHashMap<>();
+						thisMap.put(line.trim(), "");
+						setValueAtDepthKey(specMap, depth_key, thisMap, "");
+					// parent depth map이 있으면 parent map에 put
+					} else ((Map)prevMap).put(line.trim(), "");
+				} else {								// same depth or parent item
+					String parent_key = removeLastKey(depthInfoMap.get(indent_depth));
+					depthInfoMap.put(indent_depth, (parent_key.equals("")) ? line.trim() : parent_key + "." + line.trim() );
+					Map prevMap = (Map)getValueByDepthKey(specMap, parent_key, "");
+					if(prevMap == null) specMap.put(line.trim(), new LinkedHashMap<>());
+					else prevMap.put(line.trim(), "");
+				}
+				
+				prev_indent_depth = indent_depth;
+			}
+			
+			return specMap;
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+	private static int checkIndent(String chkStr) {
+		if(!chkStr.startsWith(" ") && !chkStr.startsWith("\t")) return 0;
+		Pattern p = Pattern.compile("\\S");
+		Matcher m = p.matcher(chkStr);
+		if (m.find()) return m.start();
+		return 0;
+	}
+	private static String removeLastKey(String keyStr) {
+		String[] keyAry = keyStr.split("[.]");
+		String resStr = "";
+		for(int i=0; i<keyAry.length-1; i++) {
+			resStr += (i > 0) ? ("." + keyAry[i]) : keyAry[i];
+		}
+		return resStr;
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : File 내용을 읽어와 반환함
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : readFile
+	 * @date : 2020. 1. 20.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 1. 20.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param file_path
+	 * @return
+	 * @throws Exception
+	 */
+	public static String readFile(String file_path) throws Exception {
+		try {
+			String file_contents = "";
+			File file = new File(file_path);
+			
+			FileReader fr = new FileReader(file);
+			BufferedReader br = new BufferedReader(fr);
+			
+			String line = "";
+			while((line = br.readLine()) != null) {
+				file_contents += line;
+			}
+			try {
+				if(br != null) br.close();
+				if(fr != null) fr.close();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			
+			return file_contents;
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : ServletRequest에서 Client 인증관련된 정보를 찾는다.
+	 * 2. 처리내용 : 
+	 *         a. client ip 를 찾는다.
+	 *         b. HTTP Header에서 Authorization 정보를 찾아 Basic, Bearer(JWT token) 정보를 발라낸다.
+	 *         c. Authorization 헤더 정보가 없을때는 x-access-token 헤더에서 JWT token을 발라낸다.
+	 * </pre>
+	 * @Method Name : getAuthInfo
+	 * @date : 2020. 2. 11.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 11.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param request - HttpServletRequest
+	 * @return
+	 * @throws Exception
+	 */
+	public static AuthorizationInfoVO getAuthInfo(HttpServletRequest request) throws Exception {
+		try {
+			AuthorizationInfoVO authVo = new AuthorizationInfoVO();
+			
+			// 1. Client IP 정보
+			authVo.setClientIp(getClientIpAddr(request));
+			
+			// 2. Authorization 정보
+			String authorization = request.getHeader("Authorization");
+			String auth_method = (authorization != null && !authorization.isEmpty()) ? authorization.split(" ")[0] : "";
+			String auth_credentials = (authorization != null && !authorization.isEmpty() && authorization.split(" ").length > 1) ? authorization.split(" ")[1] : "";
+
+			// JWT token 정보 (Authorization 헤더에 없을때는 x-access-token 헤더를 찾는다.
+			if(!auth_method.equalsIgnoreCase("basic") && !auth_method.equalsIgnoreCase("bearer")) {
+				String jwt_token = request.getHeader("x-access-token");
+				if(jwt_token == null || jwt_token.isEmpty()) {
+					throw new XConnectEaiServerException("", XConnectEaiServerException.AUTHORIZATION_HEADER_PARAM_FAILED);
+				}
+				authVo.setMethod(AUTHMETHOD.BEARER);
+				authVo.setCredentials(jwt_token);
+			// Authorization 정보 (Basic or Bearer)
+			} else {
+				authVo.setMethod(AUTHMETHOD.valueOf(auth_method.trim().toUpperCase()));
+				if(authVo.getMethod() == AUTHMETHOD.BASIC) {
+					// basic auth일때는 credentials이 base64로 인코딩 된 값이므로 decoding하여 넣는다.
+					String decodedString = new String(org.apache.commons.codec.binary.Base64.decodeBase64(auth_credentials));
+					authVo.setCredentials(decodedString);
+				} else authVo.setCredentials(auth_credentials);
+			}
+			
+			return authVo;
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new XConnectEaiServerException("", XConnectEaiServerException.AUTHORIZATION_HEADER_PARAM_FAILED);
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Client IP 반환
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : getClientIpAddr
+	 * @date : 2020. 1. 9.
+	 * @author : A931161
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일	         작성자                변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 1. 9.		A931161				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * <pre>
+	 *
+	 * @param request
+	 * @return
+	 */
+	public static String getClientIpAddr(HttpServletRequest request) {
+	    String ip = request.getHeader("X-Forwarded-For");
+	    if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+	        ip = request.getHeader("Proxy-Client-IP");
+	    }
+	    if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+	        ip = request.getHeader("WL-Proxy-Client-IP");
+	    }
+	    if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+	        ip = request.getHeader("HTTP_CLIENT_IP");
+	    }
+	    if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+	        ip = request.getHeader("HTTP_X_FORWARDED_FOR");
+	    }
+	    if(ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
+	        ip = request.getRemoteAddr();
+	    }
+	    return ip;
+	}	
+
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : Nginx (Proxy)에서 client의 요청에 HTTP header에 'XConnector-Proxy-Id' 키값으로 Proxy서버의 ID를 심어 보내온다.
+	 * 2. 처리내용 : proxy server id를 반환해 준다.
+	 * </pre>
+	 * @Method Name : getProxyId
+	 * @date : 2020. 2. 20.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 20.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param request
+	 * @return
+	 */
+	public static String getProxyId(HttpServletRequest request) {
+		String proxyId = request.getHeader(SystemCommonConstants.HTTP_HEAER_KEY_PROXY_ID /* "XConnector-Proxy-Id" */);
+	    return proxyId == null ? "" : proxyId;
+	}
+	
+    /**
+     * <pre>
+     * 1. 개요 : IP 포함여부 확인
+     * 2. 처리내용 : 검사대상 IP가 특정 IP와 일치하는지,
+     *             특정 IP대역 내에 포함되는지를 확인하고 그결과를 반환한다.
+     *             e.g) IP 대역 표현방식
+     *                ◦ CIDR network prefix length : 1.2.0.0/16
+     *                ◦ Mask : 1.2.0.0/255.255.0.0
+     *                ◦ Wildcard segments : 1.2.*.*
+     *                ◦ Range segments : 1.2.0-255.0-255
+     *                ◦ SQL-style single wildcards to end segments: 1.2.___.___
+     * </pre>
+     * @Method Name : containsIP
+     * @date : 2020. 1. 23.
+     * @author : A931878
+     * @history : 
+     * <pre>
+     *	-----------------------------------------------------------------------
+     *	변경일	         작성자                변경내용  
+     *	----------- ------------------- ---------------------------------------
+     *	2020. 1. 23.		A931878				최초 작성 
+     *	-----------------------------------------------------------------------
+     * <pre>
+     *
+     * @param ipRange 특정 IP 또는 IP대역
+     * @param targetIp 검사대상 IP 
+     * @return 대상IP가 특정IP(대역)에 일치할(포함될) 경우 true, 그외 false. 
+     */ 	
+    public static boolean containsIP(String ipRange, String targetIp) {
+    	
+    	if(targetIp.equalsIgnoreCase("0:0:0:0:0:0:0:1")) targetIp = "127.0.0.1";
+    	IPAddress rangeAddress = new IPAddressString(ipRange).getAddress();
+    	IPAddress subnet = rangeAddress.toPrefixBlock();
+    	IPAddress ipAddress = new IPAddressString(targetIp).getAddress();
+    	boolean result = subnet.contains(ipAddress);
+    	LOG.debug("{} is in subnet [{}] and {} address [{}]"
+    			, rangeAddress, subnet, (result ? "contains" : "does not contain"), ipAddress);
+    	return result;
+    }
+
+    /**
+     * 
+     * <pre>
+     * 1. 개요 : 정규표현식을 이용하여 sequence 하게 값을 +1 더하여 치환한다.
+     * 2. 처리내용 : "AAAA-${mapping_rule_serial} BBBB-${mapping_rule_serial}" 값은 
+     *            정규표현식 "[$]\\{mapping_rule_serial\\}" 에 의해
+     *            "AAAA-1 BBBB-2" 로 치환된다.
+     * </pre>
+     * @Method Name : replaceSequence
+     * @date : 2020. 1. 31.
+     * @author : A931744
+     * @history : 
+     * <pre>
+     *	-----------------------------------------------------------------------
+     *	변경일		작성자				변경내용  
+     *	----------- ------------------- ---------------------------------------
+     *	2020. 1. 31.		A931744				최초 작성 
+     *	-----------------------------------------------------------------------
+     * </pre>
+     *
+     * @param original_text - 치환할 원 string
+     * @param replace_pattern_exp - 치환할 정규표현식
+     * @param initial_int - 초기 값
+     * @return
+     */
+	public static String replaceSequence(String original_text, String replace_pattern_exp, int initial_int) {
+		try {
+			Pattern pattern = Pattern.compile(replace_pattern_exp);
+			Matcher matcher = pattern.matcher(original_text);
+
+			if(initial_int < 0) initial_int = 0;
+			StringBuffer sb = new StringBuffer();
+			while (matcher.find()) {
+				matcher.appendReplacement(sb, "" + initial_int);
+				initial_int++;
+			}
+			matcher.appendTail(sb);
+			// LOG.debug("[CommonUtils] >> replaceSequence :: Replaced Text = " + sb.toString());
+			return sb.toString();
+		} catch (Exception e) {
+			LOG.error("[CommonUtils] >> replaceSequence :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return original_text;
+		}
+	}
+	
+	/**
+	 * <pre>
+	 * 1. 개요 : Lambda식 내에서 Checked Exception을 처리하기 위한 메소드 
+	 * 2. 처리내용 : 전달받은 Checked Exception을 Casting 하여 그대로 Throw.
+	 * </pre>
+	 * @Method Name : throwException
+	 * @date : 2020. 2. 5.
+	 * @author : A931878
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일	         작성자                변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 5.		A931878				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * <pre>
+	 *
+	 * @param <E>
+	 * @param ex
+	 * @throws E
+	 */ 	
+	@SuppressWarnings("unchecked")
+	public static <E extends Throwable> void throwException(Exception ex) throws E {
+		throw (E) ex;
+	}
+	
+	
+	/**
+	 * <pre>
+	 * 1. 개요 : 파일 작성
+	 * 2. 처리내용 : 문자열(String)로 전달받은 Data를 지정된 위치(File정보)에 파일로 작성 
+	 * </pre>
+	 * @Method Name : writeStringToFile
+	 * @date : 2020. 2. 7.
+	 * @author : A931878
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일	         작성자                변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 7.		A931878				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * <pre>
+	 *
+	 * @param destFile
+	 * @param data
+	 * @return
+	 * @throws XConnectEaiServerException
+	 */ 	
+	public static File writeStringToFile(File destFile, String data)
+		throws XConnectEaiServerException {
+		try {
+//			if(!destFile.isFile()) {
+//				throw new XConnectEaiServerException(
+//						String.format("Invalid Parameter [destFile]. not a file.[%s]", destFile.getPath()));
+//			}
+			FileUtils.writeStringToFile(destFile, data, "UTF-8");
+			return destFile;
+		} catch (IOException e) {
+			LOG.error("[CommonUtils] >> writeStringToFile :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(
+					String.format("File creation failed. IOException occurred.[%s]", destFile.getPath()), e);
+		}
+	}
+	
+	/**
+	 * <pre>
+	 * 1. 개요 : 파일 작성
+	 * 2. 처리내용 : 바이트 배열(Byte[])로 전달받은 Data를 지정된 위치(File정보)에 파일로 작성 
+	 * </pre>
+	 * @Method Name : writeByteArrayToFile
+	 * @date : 2020. 2. 7.
+	 * @author : A931878
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일	         작성자                변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 7.		A931878				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * <pre>
+	 *
+	 * @param destFile
+	 * @param data
+	 * @return
+	 * @throws XConnectEaiServerException
+	 */ 	
+	public static File writeByteArrayToFile(File destFile, byte[] data)
+			throws XConnectEaiServerException {
+		try {
+//			if(!destFile.isFile()) {
+//				throw new XConnectEaiServerException(
+//						String.format("Invalid Parameter [destFile]. not a file.[%s]", destFile.getPath()));
+//			}
+			FileUtils.writeByteArrayToFile(destFile, data);
+			return destFile;
+		} catch (IOException e) {
+			LOG.error("[CommonUtils] >> writeByteArrayToFile :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(
+					String.format("File creation failed. IOException occurred.[%s]", destFile.getPath()), e);
+		}
+	}	
+	
+	/**
+	 * <pre>
+	 * 1. 개요 : 파일 삭제
+	 * 2. 처리내용 : 지정된 위치의 파일을 삭제한다.
+	 * </pre>
+	 * @Method Name : deleteFile
+	 * @date : 2020. 2. 7.
+	 * @author : A931878
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일	         작성자                변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 7.		A931878				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * <pre>
+	 *
+	 * @param file
+	 * @return
+	 * @throws XConnectEaiServerException
+	 */ 	
+	public static File deleteFile(File file) throws XConnectEaiServerException {
+		try {
+			if(!file.exists()) {
+				throw new XConnectEaiServerException(
+						String.format("The file to delete does not exist.[%s]",file.getPath()));
+			}
+			if(file.isDirectory()){
+				FileUtils.deleteDirectory(file);
+			} else {
+				file.delete();
+			} 
+			return file;
+		} catch (SecurityException e) { //if the calling thread does not have permission to delete the file.
+			LOG.error("[CommonUtils] >> deleteFile :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(
+					String.format("Does not have permission to delete files.[%s]", file.getPath()), e);
+		} catch(IOException e) {
+			LOG.error("[CommonUtils] >> deleteFile :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(
+					String.format("File deletion failed. IOException occurred.[%s]", file.getPath()), e);
+		}
+	}
+	
+	/**
+	 * <pre>
+	 * 1. 개요 : 파일 읽기
+	 * 2. 처리내용 : 지정된 위치의 텍스트 파일을 Line 단위로 List<String>으로 반환
+	 * </pre>
+	 * @Method Name : readLines
+	 * @date : 2020. 2. 7.
+	 * @author : A931878
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일	         작성자                변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 7.		A931878				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * <pre>
+	 *
+	 * @param file
+	 * @return
+	 * @throws XConnectEaiServerException
+	 */ 	
+	public static List<String> readLines(File file) throws XConnectEaiServerException {
+		try {
+			if(!file.exists()) {
+				throw new XConnectEaiServerException(
+						String.format("The file to read does not exist.[%s]",file.getPath()));
+			}
+			if(!file.isFile()){
+				throw new XConnectEaiServerException(String.format("Invalid file name. not a file.[%s]",file.getPath()));
+			} 
+			return FileUtils.readLines(file,"UTF-8");
+		} catch (IOException e) {
+			LOG.error("[CommonUtils] >> readLines :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(
+					String.format("File read failed. IOException occurred.[%s]", file.getPath()), e);
+		}
+	}
+	
+    /**
+     * <pre>
+     * 1. 개요 : 파일 읽기
+     * 2. 처리내용 : 지정된 위치의 텍스트 파일을 읽어들여 String 으로 반환
+     * </pre>
+     * @Method Name : readFileToString
+     * @date : 2020. 2. 7.
+     * @author : A931878
+     * @history : 
+     * <pre>
+     *	-----------------------------------------------------------------------
+     *	변경일	         작성자                변경내용  
+     *	----------- ------------------- ---------------------------------------
+     *	2020. 2. 7.		A931878				최초 작성 
+     *	-----------------------------------------------------------------------
+     * <pre>
+     *
+     * @param file
+     * @return
+     * @throws XConnectEaiServerException
+     */ 	
+    public static String readFileToString(File file) throws XConnectEaiServerException {
+    	
+		try {
+			if(!file.exists()) {
+				throw new XConnectEaiServerException(
+						String.format("The file to read does not exist.[%s]",file.getPath()));
+			}
+			if(!file.isFile()){
+				throw new XConnectEaiServerException(String.format("Invalid file name. not a file.[%s]",file.getPath()));
+			} 
+			return FileUtils.readFileToString(file, "UTF-8");
+		} catch (IOException e) {
+			LOG.error("[CommonUtils] >> readFileToString :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(
+					String.format("File read failed. IOException occurred.[%s]", file.getPath()), e);
+		}    	
+    }
+    
+    /**
+     * <pre>
+     * 1. 개요 : 파일 읽기
+     * 2. 처리내용 : 지정된 위치의 파일을 읽어들여 byte[](바이트 배열)로 반환
+     * </pre>
+     * @Method Name : readFileToByteArray
+     * @date : 2020. 2. 7.
+     * @author : A931878
+     * @history : 
+     * <pre>
+     *	-----------------------------------------------------------------------
+     *	변경일	         작성자                변경내용  
+     *	----------- ------------------- ---------------------------------------
+     *	2020. 2. 7.		A931878				최초 작성 
+     *	-----------------------------------------------------------------------
+     * <pre>
+     *
+     * @param file
+     * @return
+     * @throws XConnectEaiServerException
+     */ 	
+    public static byte[] readFileToByteArray(File file) throws XConnectEaiServerException {
+		try {
+			if(!file.exists()) {
+				throw new XConnectEaiServerException(
+						String.format("The file to read does not exist.[%s]",file.getPath()));
+			}
+			if(!file.isFile()){
+				throw new XConnectEaiServerException(String.format("Invalid file name. not a file.[%s]",file.getPath()));
+			} 
+			return FileUtils.readFileToByteArray(file);
+		} catch (IOException e) {
+			LOG.error("[CommonUtils] >> readFileToByteArray :: Error > {}", CommonUtils.getPrintStackTrace(e));
+			throw new XConnectEaiServerException(String.format("File read failed. IOException occurred.[%s]", file.getPath()), e);
+		}    	
+    }
+	
+	//req_data, res_data가 여러 라우터를 타게되면 로그 남길때마다 데이터가  더해지는데, 이때 구분자를 JSON_DELIMITER로 해서
+	//json형태가 깨지므로, 데이터를 JSON_DELIMITER로 split해서 각각 pretty string으로 바꾼다음에 이어준다.
+    public static String strPretty(String original) throws Exception {
+		String resStr = "";
+		String[] resAry= original.split(EsDocumentBuilder.JSON_DELIMITER_REGEX);
+		for(String res : resAry) {
+			resStr += com.xconnect.eai.web.common.util.CommonUtils.getIndentedXml(res);
+		}
+		return resStr;
+	}
+}
