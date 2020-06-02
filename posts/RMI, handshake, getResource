@@ -2,6 +2,12 @@
  서버들끼리 서로 주기적으로 rmi방식으로 통신해서 master서버가 죽었을시 
  서버 리소스 사용량이 가장 적은 서버에게 master 역할부여
 
+0. 각 서버마다 RMI Server Registry 등록
+<!-- 서버자원 정보 반환 RMI Server Registry 등록 -->
+	<bean id="rmiServer" class="java.rmi.registry.LocateRegistry" factory-method="createRegistry">
+		<constructor-arg index="0" value="${rmi.port}" />
+	</bean>
+	
 1. 메인라우터에 서버리소스 정보 반환하는 rmi 라우터와 / handshake rmi 라우터 등록
 String myIpAddress = Inet4Address.getLocalHost().getHostAddress(); //myIpAddress = "127.0.0.1";
 from("rmi://" + myIpAddress + ":" + rmiPort + "/" + SystemCommonConstants.RMI_REGISTRY_NAME_SVR_RESOURCE + "?remoteInterfaces=com.service.monitoring.SystemInfoService")
@@ -17,6 +23,7 @@ remoteInterfaces에 들어가는 클래스가 rmi콜로해서 반환되는 클�
 -각 메소드는 반드시 java.rmi.RemoteException 으로 예외 처리를 해주어야 한다.
  try {
 	String public_ip_addr = eaiServerMap.get("PRIVATE_IP_ADDR").toString();
+	//지정된 port를 사용해, 지정된 호스트상에서 동작하는 리모트 객체 Registry에 의 참조를 리턴
 	Registry registry = LocateRegistry.getRegistry(public_ip_addr, iHandShakingRmiPort);
 	HandShakingService handshake = (HandShakingService) registry.lookup(SystemCommonConstants.RMI_REGISTRY_NAME_HANDSHAKING);
 
