@@ -1,0 +1,82 @@
+@Test
+	public void gwmsInqueryCall() throws Exception {
+		try {
+			String reqStr = "{\r\n" + 
+					"  \"request\": {\r\n" + 
+					"    \"subsidiary\": \"C07AB\",\r\n" + 
+					"    \"dealer\": \"4554\",\r\n" + 
+					"    \"vehlCd\": \"P\",\r\n" + 
+					"    \"language\": \"ENG\",\r\n" + 
+					"    \"vehicle\": {\r\n" + 
+					"      \"vin\": \"TMAJU81BACJ262418\",\r\n" + 
+					"      \"odometer\": \"10000\",\r\n" + 
+					"      \"unit\": \"K\"\r\n" + 
+					"    },\r\n" + 
+					"    \"warranty\": {\r\n" + 
+					"      \"operations\": [\r\n" + 
+					"        {\r\n" + 
+					"          \"lts_op_cd\": \"28113R00\"\r\n" + 
+					"        }\r\n" + 
+					"      ],\r\n" + 
+					"      \"parts\": [\r\n" + 
+					"        {\r\n" + 
+					"          \"part_no\": \"28113S0100\"\r\n" + 
+					"        }\r\n" + 
+					"      ],\r\n" + 
+					"      \"paints\": [\r\n" + 
+					"        {\r\n" + 
+					"          \"paint_cd\": \"P13\"\r\n" + 
+					"        },\r\n" + 
+					"        {\r\n" + 
+					"          \"paint_cd\": \"P16\"\r\n" + 
+					"        }\r\n" + 
+					"      ]\r\n" + 
+					"    }\r\n" + 
+					"  }\r\n" + 
+					"}";
+
+			//			URL url = new URL("http://10.10.72.25:7092/WarrantyRequest");
+			URL url = new URL("http://10.115.192.160:7071/services/receive");
+			//URL url = new URL("https://httpbin.org/get");
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			conn.setRequestMethod("POST");
+			conn.setRequestProperty("Content-Type", "application/json");
+			conn.setRequestProperty("Authorization", "Basic " + "aGFweGNvbjppbXNpITEyMzQ=");
+			conn.setRequestProperty("ifTrackingId", "bd6b5312-e152-42d3-ae03-1750e21f8906");
+			conn.setRequestProperty("ifSenderGrp", "EU");
+			conn.setRequestProperty("ifSender", "HAP");
+			conn.setRequestProperty("ifReceiverGrp", "EU");
+			conn.setRequestProperty("ifReceiver", "GWMS");
+			conn.setRequestProperty("ifId", "IF_EU_HAP_GWMS_0002");
+			conn.setRequestProperty("ifVer", "v001");
+			conn.setRequestProperty("ifDateTime", "20201119011127");
+			conn.setRequestProperty("SystemID", "HAP");
+			conn.setDoOutput(true);
+			//			Map headerFields = conn.getHeaderFields();
+			//			System.out.println(headerFields);
+			OutputStreamWriter osw = new OutputStreamWriter(conn.getOutputStream(), "UTF-8");
+			osw.write(reqStr);
+			osw.flush();
+			osw.close();
+
+			BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF-8"));
+			if (conn.getResponseCode() != 200) {
+				System.out.println("Failed: HTTP error code : " + conn.getResponseCode());
+				throw new RuntimeException("Failed: HTTP error code : " + conn.getResponseCode());
+			}else {
+				System.out.println(conn.getResponseCode());
+				System.out.println("발송 성공");
+			}
+
+			StringBuilder result = new StringBuilder();
+			String line = null;
+			while((line = br.readLine()) != null){
+				result.append(line);
+			}
+			System.out.println(result);
+			br.close();           
+			conn.disconnect();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
