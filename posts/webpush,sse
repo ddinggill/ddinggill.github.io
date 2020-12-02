@@ -1,5 +1,6 @@
 -SSE 이용한 WebPush(Server Sent Event)
 -로그를 보관하는 를 카멜 라우터로 Listen하고있다가 데이터 받을때 마다 통계 및 Webpush 이벤트를 발생
+-SseEmitter 생성시 타임을 줘도 타임이 끝나면 클라이언트에서 자동으로 연결재요청을 한다.(세션이 만료되면 재요청X)
  
 1. Server side
  -WebPushController(@RestController)
