@@ -126,10 +126,11 @@
 			
 		});
 	}
-
-	public void send(SseEmitter.SseEventBuilder builder) {
+	
+	//사용하지 않는 
+	/*public void send(SseEmitter.SseEventBuilder builder) {
 		send(emitter -> emitter.send(builder));
-	}
+	}*/
 
 	private void send(SseEmitterConsumer<SseEmitter> consumer) {
 		List<SseEmitter> failedEmitters = new ArrayList<>();
