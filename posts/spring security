@@ -1,0 +1,295 @@
+1. Security Config
+
+package com.aftersales.pltfrm;
+
+import java.util.Arrays;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.session.HttpSessionEventPublisher;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.security.SpringSessionBackedSessionRegistry;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.CorsUtils;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import com.aftersales.pltfrm.web.common.interceptor.AjaxAwareAuthenticationEntryPoint;
+import com.aftersales.pltfrm.web.common.security.CustomAuthenticationProvider;
+import com.aftersales.pltfrm.web.common.security.CustomUserDetailService;
+
+@Configuration
+//Spring Security를 활성화
+@EnableWebSecurity
+@ComponentScan("com.aftersales.pltfrm.web")
+public class AftersalesSecurityConfig extends WebSecurityConfigurerAdapter {
+
+	@Value("${cors.allowed.origins}")
+	private String allowedOrigins;		
+	
+	@Value("${cors.allowed.method}")
+	private String allowedMethod;		
+	
+	@Value("${cors.register.path.pattern}")
+	private String registerPahtPattern;		
+	
+	@Autowired
+	private CustomAuthenticationProvider customAuthenticationProvider;
+	
+	@Autowired
+	private CustomUserDetailService customUserDetailService;
+	
+	@Autowired
+	private FindByIndexNameSessionRepository sessionRepository;
+	
+  //비밀번호 암호/복호화 로직이 담긴 객체 등록
+	@Bean
+	public PasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder();
+	}
+	
+  //AuthenticationManagerBuilder
+  //AuthenticationManager를 생성합니다. AuthenticationManager는 사용자 인증을 담당합니다.
+	@Override
+	protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		auth.authenticationProvider(customAuthenticationProvider);
+    //auth.userDetailsService(service)에 org.springframework.security.core.userdetails.UserDetailsService 인터페이스를 구현한 Service를 넘겨야합니다.
+		auth.userDetailsService(customUserDetailService).passwordEncoder(passwordEncoder());
+	}
+	
+	@Override //HTTP요청에 대한 보안을 
+    public void configure(HttpSecurity http) throws Exception {
+		http.authorizeRequests() //HttpServletRequest 요청 URL에 따라 접근 권한을 설정합니다.
+				.requestMatchers(CorsUtils::isPreFlightRequest).permitAll()
+				.antMatchers( //요청 URL 경로 패턴을 지정합니다.
+					"/resources/**","/static/**","/wpc/**","/css/**","/json/**","/js/**","/image/**","/loginFail", 
+					"/push/interface_log_push", "/sse/log/log_push","/login/*").permitAll() //모든 유저에게 접근을 허용합니다
+				.anyRequest().authenticated() //인증된 유저만 접근을 허용합니다.
+			.and()
+				.cors().configurationSource(corsConfigurationSource())
+			.and()
+				.headers().frameOptions().disable()
+			.and()
+				.headers().cacheControl().disable()
+			.and()
+//				.csrf().disable()
+				.csrf().disable().exceptionHandling().authenticationEntryPoint(new AjaxAwareAuthenticationEntryPoint("/login/loginPage"))
+			.and()
+				.formLogin() //form Login 설정을 진행합니다.
+				.loginPage("/login/loginPage") //커스텀 로그인 페이지 경로와 로그인 인증 경로를 등록합니다.
+				.loginProcessingUrl("/login")
+				.failureUrl("/login/loginFail")
+				.defaultSuccessUrl("/login/loginSuccess", true) //로그인 인증을 성공하면 이동하는 페이지를 등록합니다.
+				.permitAll()
+			.and()
+				.logout() //로그아웃 설정을 진행합니다.
+				.logoutRequestMatcher(new AntPathRequestMatcher("/logout"))//로그아웃 경로를 지정합니다.
+				.logoutSuccessUrl("/login/loginPage") //로그아웃 성공 시 이동할 경로를 지정합니다.
+			.and()
+				.sessionManagement();
+				//.maximumSessions(1)
+				//.maxSessionsPreventsLogin(true)
+				//.expiredUrl("/login/duplicateLoginErr")
+				//.sessionRegistry(sessionRegistry());
+	}
+
+	@Bean
+	public CorsConfigurationSource corsConfigurationSource() {
+		CorsConfiguration configuration = new CorsConfiguration();
+		configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+		configuration.setAllowedMethods(Arrays.asList(allowedMethod.split(",")));
+		configuration.setAllowedHeaders(Arrays.asList("*"));
+		configuration.setAllowCredentials(true);
+		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+		source.registerCorsConfiguration(registerPahtPattern, configuration);		
+		return source;
+	}
+	
+	@Bean
+	public SpringSessionBackedSessionRegistry sessionRegistry() {
+		return new SpringSessionBackedSessionRegistry(this.sessionRepository);
+	}
+	
+	@Bean
+    public ServletListenerRegistrationBean<HttpSessionEventPublisher> httpSessionEventPublisher() {
+        return new ServletListenerRegistrationBean<HttpSessionEventPublisher>(new HttpSessionEventPublisher());
+    }
+}
+
+
+2. CustomAuthenticationProvider
+package com.aftersales.pltfrm.web.common.security;
+
+import java.util.Collection;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.context.support.MessageSourceAccessor;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.SpringSecurityMessageSource;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Component;
+
+@Component
+public class CustomAuthenticationProvider implements AuthenticationProvider {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CustomAuthenticationProvider.class);
+	
+	@Autowired
+	private CustomUserDetailService customUserDetailService; 
+	
+	@Autowired
+	private MessageSource messageSource;
+	
+	protected MessageSourceAccessor messages = SpringSecurityMessageSource.getAccessor();
+	
+	@Override
+	public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+		String username = authentication.getName(); 
+		String password = (String) authentication.getCredentials(); 
+		User user; 
+		Collection<? extends GrantedAuthority> authorities; 
+		try { 
+			user = customUserDetailService.loadUserByUsername(username); 
+			user.setUsername(username);
+			
+			additionalAuthenticationChecks(user, (UsernamePasswordAuthenticationToken)authentication);
+			
+			authorities = user.getAuthorities(); 
+		} catch(UsernameNotFoundException e) { 
+			throw new UsernameNotFoundException(e.getMessage()); 
+		} catch(BadCredentialsException e) { 
+			throw new BadCredentialsException(e.getMessage()); 
+		} catch(Exception e) { 
+			throw new RuntimeException(e.getMessage()); 
+		} 
+		
+		return new UsernamePasswordAuthenticationToken(user, password, authorities);
+	}
+	
+	public void additionalAuthenticationChecks(UserDetails userDetails,
+			UsernamePasswordAuthenticationToken authentication)
+			throws AuthenticationException,Exception {
+		if (authentication.getCredentials() == null) {
+			// 잘못된 사용자 명 또는 암호입니다.
+			LOG.debug("Authentication failed: no credentials provided");
+			throw new BadCredentialsException(messageSource.getMessage("alert.text.0001", null, LocaleContextHolder.getLocale()));
+		}
+		
+		String presentedPassword = authentication.getCredentials().toString();
+		
+		//password 확인
+		User user = new User();
+		user.setUsername(userDetails.getUsername());
+		user.setPassword(presentedPassword);
+		
+		boolean passwordCheck = customUserDetailService.userByPassword(user);
+		if(!passwordCheck) {
+			// 잘못된 사용자 명 또는 암호입니다.
+			LOG.debug("Authentication failed: password does not match stored value");
+			throw new BadCredentialsException(messageSource.getMessage("alert.text.0001", null, LocaleContextHolder.getLocale()));
+		}
+
+		((User) userDetails).setAccountNonExpired(true);
+		((User) userDetails).setAccountNonLocked(true);
+		((User) userDetails).setCredentialsNonExpired(true);
+		((User) userDetails).setEnabled(true);
+	}
+
+	@Override
+	public boolean supports(Class<?> authentication) {
+		return (UsernamePasswordAuthenticationToken.class.isAssignableFrom(authentication));
+	}
+	
+}
+
+
+로그인 인증을 위한 회원 정보 체크 로직
+비밀번호를 체크하는 로직을 구현하려면 UserDetailsService 인터페이스를 구현한 클래스가 필요합니다.
+3. CustomUserDetailService
+package com.aftersales.pltfrm.web.common.security;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.annotation.Resource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+import com.aftersales.pltfrm.web.login.dao.LoginDAO;
+import com.aftersales.pltfrm.web.security.userinfo.vo.UserInfoVO;
+
+@Service
+public class CustomUserDetailService implements UserDetailsService {
+	
+	private static final Logger LOG = LoggerFactory.getLogger(CustomUserDetailService.class);
+
+	@Resource
+	private LoginDAO loginDAO;
+	
+	@Autowired
+	private MessageSource messageSource;
+	
+	@Value("${enc.key}")
+	private String encKey;
+	
+	@Override
+	public User loadUserByUsername(String username) throws UsernameNotFoundException {
+		
+		Map<String, Object> params = new HashMap<String, Object>();
+		params.put("username", username);
+		params.put("encKey", encKey);
+		
+		// get user information
+		UserInfoVO userInfo = loginDAO.selectUserByUsername(params);
+		
+		if(userInfo == null) {
+			// 잘못된 사용자 명 또는 암호입니다.
+			throw new UsernameNotFoundException(messageSource.getMessage("alert.text.0001", null, LocaleContextHolder.getLocale()));
+		}
+		
+		if(!"NR".equalsIgnoreCase(userInfo.getUserStatCd())) {
+			// 로그인이 불가능한 상태입니다. 관리자에게 문의하세요
+			throw new UsernameNotFoundException(messageSource.getMessage("alert.text.0002", null, LocaleContextHolder.getLocale()));
+		}
+		
+		return userInfo;
+	}
+	
+	public boolean userByPassword(User user) throws Exception {
+		boolean result = false;
+		int passwordCheck = loginDAO.seleceUserByPassword(user);
+		
+		if(passwordCheck == 1) result = true;
+		
+		return result;
+	}
+}
