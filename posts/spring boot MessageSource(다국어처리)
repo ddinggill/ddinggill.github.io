@@ -25,6 +25,9 @@ SpringBoot에서는 src/main/resources/messages.properties를 찾았을 때 자�
   자동완성이 잘 되므로 원하는 로케일을 찾아서 Locale.US 식으로 넣어 주면 된다.
 
 3) 로케일 변경 Interceptor Bean
+url 파라미터를 받아서 로케일을 변경하는 방법을 설정하는 부분이다. 코드대로 하면 https://domain.com?locale=en으로 들어왔을 때,
+APPLICATION_LOCALE 쿠키가 en으로 설정되면서 로케일이 변경된다.
+코드에선 인자값을 locale로 설정했지만, 원하는대로 설정하면 된다.
 // locale change interceptor
 	@Bean
     public LocaleChangeInterceptor localeChangeInterceptor() {
@@ -39,4 +42,82 @@ SpringBoot에서는 src/main/resources/messages.properties를 찾았을 때 자�
         registry.addInterceptor(localeChangeInterceptor());
     }
 
-5)Message
+5)Message 빈 등록
+- spring boot 사용시 ResourceBundleMessageSource가 자동으로 빈으로 등록이 되고 이 빈이 messages 리소스 번들을 메시지 소스로 읽어온다.
+  따라서 빈을 등록하지 않고 바로 사용할 수 있다.
+  그러나 MessageSource의 구현체를 ResourceBundleMessageSource가 아닌 ReloadableResourceBundleMessageSource를 사용하면 
+  어플리케이션 실행 중에 메시지 리소스 변경을 reload하게 하여 변경사항을 적용할 수 있다.
+  
+@Bean
+	public ReloadableResourceBundleMessageSource messageSource() {
+		
+		ReloadableResourceBundleMessageSource source = new ReloadableResourceBundleMessageSource();
+		// Set a single basename, following the basic ResourceBundle conventionof not specifying file extension or language codes.
+		source.setBasename("file:"+System.getProperty("server.home")+"/conf/messages/message"); 
+		// Set the default charset to use for parsing properties files
+		source.setDefaultEncoding("UTF-8"); 
+		// Set the number of seconds to cache loaded properties files. 
+		// 메시지 소스를 다시 캐시하는 최대 시간(초)를 설정
+		source.setCacheSeconds(1); 
+		// Set whether to use the message code as default message instead ofthrowing a NoSuchMessageException.
+		source.setUseCodeAsDefaultMessage(true);
+		// 기본 메세지 영어
+		Locale.setDefault(new Locale("en"));
+		return source;
+	}
+
+@Configuration하는 풀소스
+@Configuration
+public class AftersalesMessageConfig implements WebMvcConfigurer {
+	
+	@Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(localeChangeInterceptor());
+    }
+	
+	@Bean
+	public ReloadableResourceBundleMessageSource messageSource() {
+		
+		ReloadableResourceBundleMessageSource source = new ReloadableResourceBundleMessageSource();
+		// Set a single basename, following the basic ResourceBundle conventionof not specifying file extension or language codes.
+		source.setBasename("file:"+System.getProperty("server.home")+"/conf/messages/message"); 
+		// Set the default charset to use for parsing properties files
+		source.setDefaultEncoding("UTF-8"); 
+		// Set the number of seconds to cache loaded properties files. 
+		source.setCacheSeconds(1); 
+		// Set whether to use the message code as default message instead ofthrowing a NoSuchMessageException.
+		source.setUseCodeAsDefaultMessage(true);
+		// 기본 메세지 영어
+		Locale.setDefault(new Locale("en"));
+		return source;
+	}
+	
+	/*
+	@Bean
+	public SessionLocaleResolver localeResolver() {
+		SessionLocaleResolver ssnresolver = new SessionLocaleResolver(); 
+		ssnresolver.setDefaultLocale(null);
+		//System.out.println("Server Default Locale : "+Locale.getDefault().getLanguage());
+		//System.out.println("SessionLocaleResolver : null setting");
+		return ssnresolver;
+	}
+	*/
+	
+	// locale change interceptor
+	@Bean
+    public LocaleChangeInterceptor localeChangeInterceptor() {
+        LocaleChangeInterceptor lci = new LocaleChangeInterceptor();
+        lci.setParamName("locale");
+        return lci;
+    }
+	
+	// CookieLocaleResolver
+	@Bean
+	public LocaleResolver localeResolver() {
+		CookieLocaleResolver localeResolver = new CookieLocaleResolver(); 
+		localeResolver.setDefaultLocale(Locale.US);
+		localeResolver.setCookieName("localeInfo");
+		localeResolver.setCookieMaxAge(24 * 60 * 60);
+		return localeResolver;
+	}
+}
