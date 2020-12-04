@@ -66,7 +66,41 @@ APPLICATION_LOCALE 쿠키가 en으로 설정되면서 로케일이 변경된다.
 		return source;
 	}
 
-@Configuration하는 풀소스
+6)메시지 출력
+@Component
+public class AppRunner implements ApplicationRunner {
+ 
+    @Autowired
+    MessageSource messageSource;
+ 
+    @RequestMapping(value="/selectCodeMast")
+	@ResponseBody
+	public Map<String, Object> selectCodeMast(@RequestBody CommonCodeVO commonCodeVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			commonCodeVO.init();
+			int cnt = commonCodeService.selectCodeMastCnt(commonCodeVO);
+			commonCodeVO.setTotalCnt(cnt);
+			commonCodeVO.setDelYn("N");
+			
+			
+			result.put("data", commonCodeService.selectCodeMast(commonCodeVO));
+			result.put("cnt", commonCodeVO);
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+			System.out.println(messageSource.getMessage("10002", new String[]{"Leica"}, Locale.KOREA));
+			//getMessage()의 첫 번째 파라미터는 메시지 프로퍼티의 key, 두 번째 파라미터는 메시지 출력 시 전달할 argument, 세 번째 파라미터는 Locale을 설정
+		}
+		return result;
+	}	
+}
+
+7)JSP에서 사용하기
+<spring:message code="column.text.0237" text="Sundry Code"/>
+
+
+--------------------------------------------Configuration하는 풀소스-------------------------------------------
 @Configuration
 public class AftersalesMessageConfig implements WebMvcConfigurer {
 	
