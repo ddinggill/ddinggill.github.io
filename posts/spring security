@@ -1,3 +1,5 @@
+
+
 1. Security Config
 
 package com.aftersales.pltfrm;
@@ -155,6 +157,7 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 
 	private static final Logger LOG = LoggerFactory.getLogger(CustomAuthenticationProvider.class);
 	
+	//실질적으로 인증 로직을 구현하는 service 객체
 	@Autowired
 	private CustomUserDetailService customUserDetailService; 
 	
@@ -163,9 +166,13 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 	
 	protected MessageSourceAccessor messages = SpringSecurityMessageSource.getAccessor();
 	
+	//pring Security가 인증을 수행하기 위해서 호출을 해주는 메소드이다. 이 메소드로 넘겨지는 authentication 인자를 이용해서 사용자의 입력값을 얻고 인증을 수행한다. 
+	//인증이 성공적인 경우 Authentication 인터페이스를 구현한 객체를 반환하고 실패한 경우 예외를 발생시키면 된다
 	@Override
 	public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+		//로그인 페이지에서 username 파라메터로 전송한 값을 얻어온다.
 		String username = authentication.getName(); 
+		//로그인 페이지에서 password 파라메터로 전송한 값을 얻어온다.
 		String password = (String) authentication.getCredentials(); 
 		User user; 
 		Collection<? extends GrantedAuthority> authorities; 
@@ -184,6 +191,8 @@ public class CustomAuthenticationProvider implements AuthenticationProvider {
 			throw new RuntimeException(e.getMessage()); 
 		} 
 		
+		//Authentication 인터페이스를 구현한 UsernamePasswordAuthenticationToken 클래스를 생성해서 반환한다. 이 클래스는 Spring Security에서 제공되는 클래스인데 대부분의 경우에 사용하기 적당하다. 
+		//UsernamePasswordAuthenticationToken을 생성할 때 첫 번째 인자(principal)로 userVO를 직접 설정했다.
 		return new UsernamePasswordAuthenticationToken(user, password, authorities);
 	}
 	
@@ -269,6 +278,7 @@ public class CustomUserDetailService implements UserDetailsService {
 		params.put("encKey", encKey);
 		
 		// get user information
+		//user 정보를 얻어오는거지 비밀번호 확인은 X
 		UserInfoVO userInfo = loginDAO.selectUserByUsername(params);
 		
 		if(userInfo == null) {
@@ -284,6 +294,7 @@ public class CustomUserDetailService implements UserDetailsService {
 		return userInfo;
 	}
 	
+	//비밀번호 
 	public boolean userByPassword(User user) throws Exception {
 		boolean result = false;
 		int passwordCheck = loginDAO.seleceUserByPassword(user);
