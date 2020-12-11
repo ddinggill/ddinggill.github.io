@@ -1,0 +1,574 @@
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.StringReader;
+import java.lang.reflect.Type;
+import java.math.BigDecimal;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.URL;
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TimeZone;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+
+import org.apache.catalina.core.ApplicationContext;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.http.HttpHost;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.assertj.core.util.Arrays;
+
+import org.json.JSONObject;
+import org.json.XML;
+import org.json.XMLParserConfiguration;
+import org.junit.Test;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.core.io.ByteArrayResource;
+
+import com.aftersales.pltfrm.web.dealersetting.pricing.vo.SundryPricePolicyVO;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonSerializationContext;
+import com.google.gson.JsonSerializer;
+import com.google.gson.TypeAdapter;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+import com.google.gson.stream.JsonWriter;
+
+/**
+ * <pre>
+ * com.xconnect.eai.test 
+ *    |_ TestCase.java
+ * 
+ * </pre>
+ * @date : 2019. 11. 19. 오후 4:22:30
+ * @version : 
+ * @author : A931744
+ */
+@SpringBootApplication
+public class TestCase {
+
+	private static final Logger LOG = LoggerFactory.getLogger(TestCase.class);
+
+	@Test
+	public void contertTest() throws Exception {
+		try {
+			String str = createRandomString(20);
+			System.out.println(str);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+
+	public String createRandomString(int length) {
+		String uuid = UUID.randomUUID().toString().replaceAll("-", ""); // -를 제거해 주었다.
+
+		if(length > uuid.length()) {
+			uuid = uuid.substring(0, uuid.length());
+		} else {
+			uuid = uuid.substring(0, length);
+		}
+
+		return uuid;
+	}
+
+	@Test
+	public void steam() throws Exception {
+		try {
+			List<Map<String, Object>> colList = new ArrayList<Map<String,Object>>();
+			Map<String, Object> col1 = new HashMap<String, Object>();
+			col1.put("key", "a");
+
+			Map<String, Object> col2 = new HashMap<String, Object>();
+			col2.put("key", "b");
+
+			Map<String, Object> col3 = new HashMap<String, Object>();
+			col3.put("key", "c");
+
+			colList.add(col1);
+			colList.add(col2);
+			colList.add(col3);
+
+			Map<String, Object> find = colList.stream().filter(key -> key.get("key").equals("c")).findAny().get();
+
+			System.out.println(colList.indexOf(find));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void gwmsClaimRequestCall() throws Exception {
+		try {
+			String reqStr = "{\r\n" + 
+					"  \"request\": {\r\n" + 
+					"    \"vin\": \"KMHJU81CSAU081622\",\r\n" + 
+					"    \"cauPartNo1\": \"12\",\r\n" + 
+					"    \"roOpenNo\": \"\",\r\n" + 
+					"    \"cauPartNo2\": \"34\",\r\n" + 
+					"    \"roOpenDt\": \"\",\r\n" + 
+					"    \"cauPartNo3\": \"56\",\r\n" + 
+					"    \"roCloseNo\": \"\",\r\n" + 
+					"    \"openodmt\": \"10\",\r\n" + 
+					"    \"natCd\": \"V4\",\r\n" + 
+					"    \"roCloseDt\": \"\",\r\n" + 
+					"    \"closeodmt\": \"20\",\r\n" + 
+					"    \"cauCd\": \"ZZ7\",\r\n" + 
+					"    \"campNo\": \"1234567890\",\r\n" + 
+					"    \"mainOpCd\": \"op\",\r\n" + 
+					"    \"clmType\": \"Z\",\r\n" + 
+					"    \"clmNoDist\": \"C07AB\",\r\n" + 
+					"    \"clmNoDlr\": \"4554\",\r\n" + 
+					"    \"clmNoSrl\": \"54\",\r\n" + 
+					"    \"notes\": [\r\n" + 
+					"      {\r\n" + 
+					"        \"noteNoteTyp\": \"C\",\r\n" + 
+					"        \"noteNote\": \"3\"\r\n" + 
+					"      }\r\n" + 
+					"    ],\r\n" + 
+					"    \"operations\": [\r\n" + 
+					"      {\r\n" + 
+					"        \"operationOpCd\": \"op\",\r\n" + 
+					"        \"operationClmOpQty\": \"1\",\r\n" + 
+					"        \"operationClmOpTime\": \"1\",\r\n" + 
+					"        \"operationPaintCauCd\": \"\",\r\n" + 
+					"        \"operationClmNoLine\": \"1\"\r\n" + 
+					"      }\r\n" + 
+					"    ],\r\n" + 
+					"    \"parts\": [\r\n" + 
+					"      {\r\n" + 
+					"        \"partNo1\": \"12\",\r\n" + 
+					"        \"partNo2\": \"34\",\r\n" + 
+					"        \"partNo3\": \"56\",\r\n" + 
+					"        \"partOrdrTyp\": \"DO\",\r\n" + 
+					"        \"partOrdrNo\": \"1\",\r\n" + 
+					"        \"partClmPartQty\": \"1\",\r\n" + 
+					"        \"partsClmNoLine\": \"1\"\r\n" + 
+					"      }\r\n" + 
+					"    ],\r\n" + 
+					"    \"servlets\": [\r\n" + 
+					"      {\r\n" + 
+					"        \"servletSbltTyp\": \"A3\",\r\n" + 
+					"        \"servletSbltInvcNo\": \"2\",\r\n" + 
+					"        \"servletClmSbltAmt\": \"2\",\r\n" + 
+					"        \"servletClmNoLine\": \"1\"\r\n" + 
+					"      }\r\n" + 
+					"    ]\r\n" + 
+					"  }\r\n" + 
+					"}";
+
+			//			URL url = new URL("http://10.10.72.25:7092/WarrantyRequest");
+			URL url = new URL("http://10.115.192.160:7071/services/receive");
+			//URL url = new URL("https://httpbin.org/get");
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			conn.setRequestMethod("POST");
+			conn.setRequestProperty("Content-Type", "application/json");
+			conn.setRequestProperty("Authorization", "Basic " + "aGFweGNvbjppbXNpITEyMzQ=");
+			conn.setRequestProperty("ifTrackingId", "bd6b5312-e152-42d3-ae03-1750e21f8906");
+			conn.setRequestProperty("ifSenderGrp", "EU");
+			conn.setRequestProperty("ifSender", "HAP");
+			conn.setRequestProperty("ifReceiverGrp", "EU");
+			conn.setRequestProperty("ifReceiver", "GWMS");
+			conn.setRequestProperty("ifId", "IF_EU_HAP_GWMS_0001");
+			conn.setRequestProperty("ifVer", "v001");
+			conn.setRequestProperty("ifDateTime", "20201119011127");
+			conn.setRequestProperty("SystemID", "HAP");
+
+			conn.setDoOutput(true);
+			//			Map headerFields = conn.getHeaderFields();
+			//			System.out.println(headerFields);
+			OutputStreamWriter osw = new OutputStreamWriter(conn.getOutputStream(), "UTF-8");
+			osw.write(reqStr);
+			osw.flush();
+			osw.close();
+
+			BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF-8"));
+			if (conn.getResponseCode() != 200) {
+				System.out.println("Failed: HTTP error code : " + conn.getResponseCode());
+				throw new RuntimeException("Failed: HTTP error code : " + conn.getResponseCode());
+			}else {
+				System.out.println(conn.getResponseCode());
+				System.out.println("발송 성공");
+			}
+
+			StringBuilder result = new StringBuilder();
+			String line = null;
+			while((line = br.readLine()) != null){
+				result.append(line);
+			}
+			System.out.println(result);
+			br.close();           
+			conn.disconnect();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	public static int count;
+	
+	@Test
+	public void call() throws Exception {
+		count = 0;
+		Timer m_timer = new Timer();
+		TimerTask m_task = new TimerTask() {
+			@Override
+			public void run() {
+				try {
+					if(count < 5) {
+						gwmsInqueryDirectCall();
+						//System.out.println("반복" + count);
+						count++;
+					}else {
+						m_timer.cancel();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		};
+		
+		m_timer.schedule(m_task, 1000, 5000);
+		
+		
+		Thread.sleep(100000);
+	}
+	
+	@Test
+	public void gwmsInqueryDirectCall() throws Exception {
+		try {
+			String reqStr = "{\r\n" + 
+					"  \"request\": {\r\n" + 
+					"    \"subsidiary\": \"C07AB\",\r\n" + 
+					"    \"dealer\": \"4554\",\r\n" + 
+					"    \"language\": \"ENG\",\r\n" + 
+					"    \"vehicle\": {\r\n" + 
+					"      \"vin\": \"KMHSH81WP8U278343\",\r\n" + 
+					"      \"odometer\": \"10000\",\r\n" + 
+					"      \"unit\": \"K\"\r\n" + 
+					"    }\r\n" + 
+					"  }\r\n" + 
+					"}";
+
+			URL url = new URL("http://gwms.hyundai-motor.com/WarrantyCondition");
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			conn.setRequestMethod("POST");
+			conn.setRequestProperty("Content-Type", "application/json");
+			conn.setDoOutput(true);
+			OutputStreamWriter osw = new OutputStreamWriter(conn.getOutputStream(), "UTF-8");
+			osw.write(reqStr);
+			osw.flush();
+			osw.close();
+
+			BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF-8"));
+			if (conn.getResponseCode() != 200) {
+				System.out.println("Failed: HTTP error code : " + conn.getResponseCode());
+				throw new RuntimeException("Failed: HTTP error code : " + conn.getResponseCode());
+			}else {
+				System.out.println(conn.getResponseCode());
+				System.out.println("발송 성공");
+			}
+
+			StringBuilder result = new StringBuilder();
+			String line = null;
+			while((line = br.readLine()) != null){
+				result.append(line);
+			}
+			System.out.println(result);
+			br.close();           
+			conn.disconnect();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void gwmsInqueryCall() throws Exception {
+		try {
+			String reqStr = "{\r\n" + 
+					"  \"request\": {\r\n" + 
+					"    \"subsidiary\": \"C07AB\",\r\n" + 
+					"    \"dealer\": \"4554\",\r\n" + 
+					"    \"language\": \"ENG\",\r\n" + 
+					"    \"vehicle\": {\r\n" + 
+					"      \"vin\": \"TMAJU81BACJ262418\",\r\n" + 
+					"      \"odometer\": \"10000\",\r\n" + 
+					"      \"unit\": \"K\"\r\n" + 
+					"    }\r\n" + 
+					"  }\r\n" + 
+					"}";
+
+			URL url = new URL("http://10.115.192.160:7071/services/receive");
+			//URL url = new URL("https://httpbin.org/get");
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			conn.setRequestMethod("POST");
+			conn.setRequestProperty("Content-Type", "application/json");
+			conn.setRequestProperty("Authorization", "Basic " + "aGFweGNvbjppbXNpITEyMzQ=");
+			conn.setRequestProperty("ifTrackingId", "bd6b5312-e152-42d3-ae03-1750e21f8906");
+			conn.setRequestProperty("ifSenderGrp", "EU");
+			conn.setRequestProperty("ifSender", "HAP");
+			conn.setRequestProperty("ifReceiverGrp", "EU");
+			conn.setRequestProperty("ifReceiver", "GWMS");
+			conn.setRequestProperty("ifId", "IF_EU_HAP_GWMS_0002");
+			conn.setRequestProperty("ifVer", "v001");
+			conn.setRequestProperty("ifDateTime", "20201119011127");
+			conn.setRequestProperty("SystemID", "HAP");
+			conn.setDoOutput(true);
+			//			Map headerFields = conn.getHeaderFields();
+			//			System.out.println(headerFields);
+			OutputStreamWriter osw = new OutputStreamWriter(conn.getOutputStream(), "UTF-8");
+			osw.write(reqStr);
+			osw.flush();
+			osw.close();
+
+			BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF-8"));
+			if (conn.getResponseCode() != 200) {
+				System.out.println("Failed: HTTP error code : " + conn.getResponseCode());
+				throw new RuntimeException("Failed: HTTP error code : " + conn.getResponseCode());
+			}else {
+				System.out.println(conn.getResponseCode());
+				System.out.println("발송 성공");
+			}
+
+			StringBuilder result = new StringBuilder();
+			String line = null;
+			while((line = br.readLine()) != null){
+				result.append(line);
+			}
+			System.out.println(result);
+			br.close();           
+			conn.disconnect();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	@Test
+	public void gwmsHistoryCall() throws Exception {
+		try {
+			String reqStr = "{\r\n" + 
+					"  \"request\": {\r\n" + 
+					"    \"subsidiary\": \"C11AB\",\r\n" + 
+					"    \"dealer\": \"4554\",\r\n" + 
+					"    \"vin\": \"KMHSH81WP8U278343\"\r\n" + 
+					"  }\r\n" + 
+					"}";
+
+			//			URL url = new URL("http://10.10.72.25:7092/WarrantyRequest");
+			URL url = new URL("http://10.115.192.160:7071/services/receive");
+			//URL url = new URL("https://httpbin.org/get");
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			conn.setRequestMethod("POST");
+			conn.setRequestProperty("Content-Type", "application/json");
+			conn.setRequestProperty("Authorization", "Basic " + "aGFweGNvbjppbXNpITEyMzQ=");
+			conn.setRequestProperty("ifTrackingId", "bd6b5312-e152-42d3-ae03-1750e21f8906");
+			conn.setRequestProperty("ifSenderGrp", "EU");
+			conn.setRequestProperty("ifSender", "HAP");
+			conn.setRequestProperty("ifReceiverGrp", "EU");
+			conn.setRequestProperty("ifReceiver", "GWMS");
+			conn.setRequestProperty("ifId", "IF_EU_HAP_GWMS_0003");
+			conn.setRequestProperty("ifVer", "v001");
+			conn.setRequestProperty("ifDateTime", "20201119011127");
+			conn.setRequestProperty("SystemID", "HAP");
+			conn.setDoOutput(true);
+			OutputStreamWriter osw = new OutputStreamWriter(conn.getOutputStream(), "UTF-8");
+			osw.write(reqStr);
+			osw.flush();
+			osw.close();
+
+			BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF-8"));
+			if (conn.getResponseCode() != 200) {
+				System.out.println("Failed: HTTP error code : " + conn.getResponseCode());
+				throw new RuntimeException("Failed: HTTP error code : " + conn.getResponseCode());
+			}else {
+				System.out.println(conn.getResponseCode());
+				System.out.println("발송 성공");
+			}
+
+			StringBuilder result = new StringBuilder();
+			String line = null;
+			while((line = br.readLine()) != null){
+				result.append(line);
+			}
+			System.out.println(result);
+			br.close();           
+			conn.disconnect();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	@Test
+	public void partsOrderRequest() throws Exception {
+		try {
+			
+			String init_time = new SimpleDateFormat("yyyyMMddHHmmssSSS").format(new Date());
+			Map<String, Object> request = new HashMap<String, Object>();
+			Map<String, Object> header = new HashMap<String, Object>();
+			Map<String, Object> payload = new HashMap<String, Object>();
+			Map<String, Object> T_DATA = new HashMap<String, Object>();
+			header.put("ifTrackingId", UUID.randomUUID().toString());
+			header.put("ifSenderGp", "EU");
+			header.put("ifSender", "HAP");
+			header.put("ifReceiverGp", "EU");
+			header.put("ifReceiver", "AMOS");
+			header.put("ifId", "IF_EU_HAP_AMOS_0001");
+			header.put("ifVer", "v001");
+			header.put("ifDateTime", init_time);
+			request.put("header", header);
+			
+			T_DATA.put("distCd", "C11AB");
+			T_DATA.put("dlrCd", "C11AB00036");
+			T_DATA.put("ordNo", "2011261017");
+			T_DATA.put("mobisSuffix", "001");
+			
+			payload.put("T_DATA", T_DATA);
+			request.put("payload", payload);
+			
+			ObjectMapper mapper = new ObjectMapper();
+			String reqStr = mapper.writeValueAsString(request);
+			
+//			String reqStr = "{\r\n" +
+//	                        "  \"request\" : {\r\n" + 
+//	                        "    \"header\" : {\r\n" + 
+//	                        "      \"ifTrackingId\" : \"" + UUID.randomUUID().toString() + "\",\r\n" + 
+//	                        "      \"ifSenderGp\" : \"EU\",\r\n" + 
+//	                        "      \"ifSender\" : \"HAP\",\r\n" + 
+//	                        "      \"ifReceiverGp\" : \"EU\",\r\n" + 
+//	                        "      \"ifReceiver\" : \"AMOS\",\r\n" + 
+//	                        "      \"ifId\" : \"IF_EU_HAP_AMOS_0001\",\r\n" + 
+//	                        "      \"ifVer\" : \"v001\",\r\n" + 
+//	                        "      \"ifDateTime\" : \"" + init_time + "\"\r\n" +
+//	                        "    },\r\n" +
+//	                        "    \"payload\" : {\r\n" +
+//	                        "      \"T_DATA\" : {\r\n" +
+//	                        "        \"distCd\" : \"C11AB\",\r\n" + 
+//	                        "        \"dlrCd\" : \"C11AB00036\",\r\n" + 
+//	                        "        \"ordNo\" : \"2011261017\",\r\n" + 
+//	                        "        \"mobisSuffix\" : \"001\"\r\n" + 
+//	                        "      }\r\n" +
+//	                        "    }\r\n" +
+//	                        "  }\r\n" +
+//	                        "}";
+
+			//			URL url = new URL("http://10.10.72.25:7092/WarrantyRequest");
+			URL url = new URL("http://10.115.192.160:7071/services/receive");
+			//URL url = new URL("https://httpbin.org/get");
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			conn.setRequestMethod("POST");
+			conn.setRequestProperty("Content-Type", "application/json");
+			conn.setRequestProperty("Authorization", "Basic " + "aGFweGNvbjppbXNpITEyMzQ=");
+
+			conn.setDoOutput(true);
+			OutputStreamWriter osw = new OutputStreamWriter(conn.getOutputStream(), "UTF-8");
+			osw.write(reqStr);
+			osw.flush();
+			osw.close();
+
+			BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(),"UTF-8"));
+			if (conn.getResponseCode() != 200) {
+				System.out.println("Failed: HTTP error code : " + conn.getResponseCode());
+				throw new RuntimeException("Failed: HTTP error code : " + conn.getResponseCode());
+			}else {
+				System.out.println(conn.getResponseCode());
+				System.out.println("발송 성공");
+			}
+
+			StringBuilder result = new StringBuilder();
+			String line = null;
+			while((line = br.readLine()) != null){
+				result.append(line);
+			}
+			System.out.println(result);
+			br.close();           
+			conn.disconnect();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}	
+
+	@Test
+	public void webpush() throws Exception {
+		try {
+			Map<String, Map<String, Object>> colList = new HashMap<String, Map<String,Object>>();
+			String str1 = "a";
+			Map<String, Object> col1 = new HashMap<String, Object>();
+			col1.put("key", "a");
+
+			String str2 = "b";
+			Map<String, Object> col2 = new HashMap<String, Object>();
+			col2.put("key", "b");
+
+			String str3 = "c";
+			Map<String, Object> col3 = new HashMap<String, Object>();
+			col3.put("key", "c");
+
+			colList.put(str1, col1);
+			colList.put(str2, col2);
+			colList.put(str3, col3);
+
+			colList.remove(str2);
+
+			System.out.println("SFDSFDSSDF");
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void tax() throws Exception {
+		try {
+			String str = "dfsdfsf       ";
+			str = str.replaceAll(" ", "");
+			System.out.println(str);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+}
