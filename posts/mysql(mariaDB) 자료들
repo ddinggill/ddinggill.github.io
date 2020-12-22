@@ -104,3 +104,38 @@ WHERE
 		AND MI_CL_ID = #{miInfo.MI_CL_ID}
 		AND MI_OPT_ID = #{miInfo.MI_OPT_ID}
 	</foreach>
+
+8.페이징 처리관련
+	@ResponseBody
+	@RequestMapping("/searchDealer")
+	public Map<String, Object> searchDealer(HttpSession session, @RequestBody DealerSearchVO dealerSearch) throws Exception {
+		Map<String, Object> resultMap = new HashMap<>();
+		try {
+			resultMap.put("data", dealerService.searchDealer(dealerSearch));
+			resultMap.put("pagination", getPagenation(dealerSearch, dealerService.selectDealerListCount(dealerSearch)));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		return resultMap;
+	}
+	
+	// 페이지 맵 객체 리턴
+	private Map<String, Object> getPagenation(DefaultVO vo, int totalCnt) {
+
+		Map<String, Object> pagingMap = new HashMap<>();
+
+		pagingMap.put("totalCnt", totalCnt );
+		pagingMap.put("pageSize", "".equals(vo.getPageSize()) ? "10" : vo.getPageSize());
+		pagingMap.put("pageNumber", "".equals(vo.getPageNumber()) ? "1" : vo.getPageNumber());
+
+		return pagingMap;
+	}
+	
+	//xml
+	LIMIT #{pageSize} OFFSET #{offset} -- 쿼리마지막에 한페이지에 몇개 뽑을지와 시작할 offset주기
+	Ex) 10행씩 출력
+	1페이지 : select * from member ORDERS LIMIT 10 OFFSET 0;
+	2페이지 : select * from member ORDERS LIMIT 10 OFFSET 10;
+
+
