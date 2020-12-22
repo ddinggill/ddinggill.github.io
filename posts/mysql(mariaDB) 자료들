@@ -53,3 +53,54 @@ VALUES
 ON DUPLICATE KEY UPDATE
 	HAP_CORP_CD = #{hapCorpCd},
 	DLR_NM = #{dlrNm}
+
+5. mybatis select key(결과 수행 후 seq_no+1 값 리턴)
+<selectKey keyProperty="seqNo" resultType="java.lang.Integer" order="BEFORE">
+	SELECT IFNULL(MAX(SEQ_NO)+1, 1) FROM tb_adm_dealer_chrgr WHERE HAP_DLR_CD = #{hapDlrCd}
+</selectKey>
+INSERT INTO tb_adm_dealer_chrgr
+	(
+		SEQ_NO,
+		HAP_DLR_CD,
+		CHRG_TASK_CD,
+		CHRGR_NM,
+		EMP_NO,
+		EMAIL_ADDR,
+		SKILL_LEVEL_CD,
+		REG_DT,
+		REG_USER_ID
+	)
+VALUES
+	(
+		#{seqNo}, #{hapDlrCd}, #{chrgTaskCd}, #{chrgrNm}, #{empNo},
+		AES_ENCRYPT(#{emailAddr}, #{encKey}), #{skillLevelCd}, CURRENT_TIMESTAMP, #{regUserId}
+	)
+	
+6. 한번에 여러 테이블 데이터 지우기
+-A테이블을 기준으로 OUTER JOIN 한 이유는 INNER JOIN할 경우 조건이 안맞으면 A 테이블 데이터도 지워지지 않는다.
+-즉 A테이블 데이터는 무조건 지우고 JOIN해서 조건 일치하는 애들이 있으면 딴 테이블 데이터도 지운다.
+DELETE 
+FROM A, B, C, D, E -- 데이터 지우려는 테이블들
+  USING tb_adm_sundry_mast A 
+  LEFT OUTER JOIN tb_adm_sundry_mi_option B
+  ON A.SUNDRY_CD = B.SUNDRY_CD
+  LEFT OUTER JOIN tb_adm_sundry_vehl_mdl C
+  ON A.SUNDRY_CD = C.SUNDRY_CD
+  LEFT OUTER JOIN tb_adm_sundry_dms_info D
+  ON A.SUNDRY_CD = D.SUNDRY_CD
+  LEFT OUTER JOIN tb_adm_sundry_local_nm E
+  ON A.SUNDRY_CD = E.SUNDRY_CD
+WHERE A.SUNDRY_CD = #{sundryCd}
+  
+7. 한 테이블에서 여러 건수 지우기
+-지울 데이터 조건을 list로 받아서 foreach써서 여러건 지우기
+DELETE
+FROM tb_adm_sundry_mi_option
+WHERE 
+	<foreach collection="list" item="miInfo" separator="OR">
+		SUNDRY_CD = #{miInfo.SUNDRY_CD}
+		AND CO_CD = #{miInfo.CO_CD}
+		AND VEHL_CD = #{miInfo.VEHL_CD}
+		AND MI_CL_ID = #{miInfo.MI_CL_ID}
+		AND MI_OPT_ID = #{miInfo.MI_OPT_ID}
+	</foreach>
