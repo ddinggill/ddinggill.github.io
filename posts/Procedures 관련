@@ -1,0 +1,30 @@
+1. 프로시저 호출해서 out데이터를 받는 경우
+-service(taxInfo를 param으로 넘기고 결과값을 저기에 세팅, TaxInfoVO에 rtnCd, rtnMsg필드가 있어야 함)
+	@Override
+	public TaxInfoVO insertAppendTaxInfo(TaxInfoVO taxInfo) throws Exception {
+		taxInfo = taxDAO.insertAppendTaxInfo(taxInfo);
+		return taxInfo;
+	}
+-dao
+	@Override
+	public TaxInfoVO insertAppendTaxInfo(TaxInfoVO taxInfo) throws Exception {
+		selectOne(getNamespace() + ".insertAppendTaxInfo", taxInfo);
+		return taxInfo;
+	}
+-xml
+<select id="insertAppendTaxInfo" statementType="CALLABLE" resultType="com.aftersales.pltfrm.web.dealersetting.tax.vo.TaxInfoVO">
+	{ 
+   		CALL PR_APPEND_NEW_TAX_INFO(
+   			#{taxId, mode=IN, jdbcType=VARCHAR}
+   			, #{taxNm, mode=IN, jdbcType=VARCHAR}
+   			, #{hapDlrCd, mode=IN, jdbcType=VARCHAR}
+   			, #{taxRate, mode=IN}
+   			, #{startDay, mode=IN, jdbcType=VARCHAR}
+   			, #{endDay, mode=IN, jdbcType=VARCHAR}
+   			, #{defaultYn, mode=IN, jdbcType=VARCHAR}
+   			, #{updtUserId, mode=IN, jdbcType=VARCHAR}
+   			, #{rtnCd, mode=OUT, jdbcType=INTEGER}
+   			, #{rtnMsg, mode=OUT, jdbcType=VARCHAR}
+  		) 
+	}
+</select>
