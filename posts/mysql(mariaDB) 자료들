@@ -35,3 +35,6 @@ CREATE TABLE `tb_adm_mdl_sundry_volm` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='차량모델별Sundry용량';
 
 쿼리에서는 AND MATCH(MDL_DESCR) AGAINST(#{keyWord} IN BOOLEAN MODE) 이런식으로 사용
+
+3. 대소문자 상관없이 정렬
+ORDER BY 할떄 UPPER('값') 식으로 값을 모두 대문자나 소문자로 변경후 sort
