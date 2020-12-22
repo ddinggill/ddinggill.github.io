@@ -1,3 +1,4 @@
+1. 칼럼의 값을 구분자로 잘라서 list 형식으로 출력
 참고 사이트 : https://yamea-guide.tistory.com/88
 
 select
@@ -21,3 +22,16 @@ SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(KEY_WORD, ',', A.N),',', -1)
 		ON CHAR_LENGTH(B.KEY_WORD) - CHAR_LENGTH(REPLACE(B.KEY_WORD, ',', '')) >= A.N - 1
 		WHERE B.KEY_WORD_ID = #{keyWord}
 		AND SUBSTRING_INDEX(SUBSTRING_INDEX(KEY_WORD, ',', A.N),',', -1) != ' '
+
+2.FULL TEXT SEARCH
+CREATE TABLE `tb_adm_mdl_sundry_volm` (
+  `MDL_DESCR` text CHARACTER SET utf8 DEFAULT NULL COMMENT '모델Description',
+  `REG_DT` datetime NOT NULL COMMENT '등록일시',
+  `REG_USER_ID` varchar(80) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '등록자ID',
+  `UPDT_DT` datetime DEFAULT NULL COMMENT '수정일시',
+  `UPDT_USER_ID` varchar(80) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '수정자ID',
+  PRIMARY KEY (`CO_CD`,`VEHL_CD`,`CAT_NO`,`MICD`,`SUNDRY_TYPE_CD`),
+  FULLTEXT KEY `FULLTEXT_MDL_DESCR` (`MDL_DESCR`) -- 테이블에 특정 칼럼에 FULLTEXT KEY로 만들고
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='차량모델별Sundry용량';
+
+쿼리에서는 AND MATCH(MDL_DESCR) AGAINST(#{keyWord} IN BOOLEAN MODE) 이런식으로 사용
