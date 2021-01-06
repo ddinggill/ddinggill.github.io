@@ -1,0 +1,335 @@
+1. @ExceptionHandler같은 경우는 @Controller, @RestController가 적용된 Bean내에서 발생하는 예외를 잡아서 하나의 메서드에서 처리해주는 기능을 한다.
+
+@ExceptionHandler(WebException.class)
+	@ResponseBody
+	public Map<String, String> handle(WebException we, HttpServletRequest request, HttpServletResponse response) {
+		
+		Map<String, String> message = new HashMap<String, String>();
+
+		String errorCode = we.getErrorCode();
+		String errorMsg = we.getMessage();
+		
+		// error code를 사용하여 DB 에서 error 메시지 조회 필요
+		// SvrErrCode 에 값이 존재 하는 경우
+		if(we.getSvrErrCode() == -1) {
+			message.put("code", String.valueOf(we.getSvrErrCode()));
+			message.put("message", "An error has occurred. If it still occurs, contatct the administrator");
+		} else if(we.getSvrErrCode() > 0) {
+			try {
+				errorCode = String.format("ST%05d", we.getSvrErrCode());
+				errorMsg = messageSource.getMessage(errorCode, null, LocaleContextHolder.getLocale());
+			} catch (Exception e) {
+			}
+			
+			message.put("code", errorCode);
+			message.put("message", errorMsg);
+		} else if(we.getErrorCode() == null && we.getMessage() == null) {
+			messageSetting(we, message);
+		} else {
+			// 2020-01-04 서버 에러 메시지 조합
+			try {
+				errorCode = String.format("ST%05d", Integer.parseInt(errorCode));
+				errorMsg = messageSource.getMessage(errorCode, null, LocaleContextHolder.getLocale());
+			} catch (Exception e) {
+			}
+			
+			message.put("code", errorCode);
+			message.put("message", errorMsg);
+		}
+		
+		response.setStatus(500);
+		
+		return message;
+	}
+  
+  
+2. @ExceptionHandler가 하나의 클래스에 대한 것이라면, @ControllerAdvice는 모든 @Controller 즉, 전역에서 발생할 수 있는 예외를 잡아 처리해주는 annotation이다.
+예제)CustomControllerAdvice.java
+/*
+ * Copyright Hyundai Auto Ever.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai Auto Ever. ("Confidential Information").
+ */
+
+package com.aftersales.pltfrm.web.common.controller; 
+
+import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.servlet.ModelAndView;
+
+import com.aftersales.pltfrm.web.common.exception.RoleGetException;
+import com.aftersales.pltfrm.web.common.exception.RolePostException;
+import com.aftersales.pltfrm.web.common.exception.WebException;
+
+/**
+ * <pre>
+ * com.aftersales.pltfrm.web.common.controller 
+ *    |_ ControllerAdvice.java
+ * 
+ * </pre>
+ * @date : 2020. 1. 9. 오후 6:07:10
+ * @version : 
+ * @author : A931754
+ */
+@ControllerAdvice
+public class CustomControllerAdvice {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CustomControllerAdvice.class);
+	
+	@Autowired
+	private MessageSource messageSource;
+
+	@ExceptionHandler(WebException.class)
+	@ResponseBody
+	public Map<String, String> handle(WebException we, HttpServletRequest request, HttpServletResponse response) {
+		
+		Map<String, String> message = new HashMap<String, String>();
+
+		String errorCode = we.getErrorCode();
+		String errorMsg = we.getMessage();
+		
+		// error code를 사용하여 DB 에서 error 메시지 조회 필요
+		// SvrErrCode 에 값이 존재 하는 경우
+		if(we.getSvrErrCode() == -1) {
+			message.put("code", String.valueOf(we.getSvrErrCode()));
+			message.put("message", "An error has occurred. If it still occurs, contatct the administrator");
+		} else if(we.getSvrErrCode() > 0) {
+			try {
+				errorCode = String.format("ST%05d", we.getSvrErrCode());
+				errorMsg = messageSource.getMessage(errorCode, null, LocaleContextHolder.getLocale());
+			} catch (Exception e) {
+			}
+			
+			message.put("code", errorCode);
+			message.put("message", errorMsg);
+		} else if(we.getErrorCode() == null && we.getMessage() == null) {
+			messageSetting(we, message);
+		} else {
+			// 2020-01-04 서버 에러 메시지 조합
+			try {
+				errorCode = String.format("ST%05d", Integer.parseInt(errorCode));
+				errorMsg = messageSource.getMessage(errorCode, null, LocaleContextHolder.getLocale());
+			} catch (Exception e) {
+			}
+			
+			message.put("code", errorCode);
+			message.put("message", errorMsg);
+		}
+		
+		response.setStatus(500);
+		
+		return message;
+	}
+	
+	private void messageSetting(WebException we, Map<String, String> message) {
+		if(we.getCause() instanceof DuplicateKeyException) {
+			message.put("code", "0000");
+			message.put("message", "primary key duplicate");
+		}else if(we.getCause() instanceof SQLException) {
+			message.put("code", "0000");
+			message.put("message", "DB error");
+		}
+		else {
+			message.put("code", "0000");
+			message.put("message", "unknown error");
+		}
+	}
+	
+	@ExceptionHandler(RoleGetException.class)
+	public ModelAndView readException(RoleGetException we, HttpServletRequest request, HttpServletResponse response) {
+		ModelAndView model = new ModelAndView();
+		
+		model.setViewName("error/error");
+		model.addObject("errMsg", "You do not have permission");
+		
+		return model;
+	}
+	
+	@ExceptionHandler(RolePostException.class)
+	@ResponseBody
+	public Map<String, Object> procException(RolePostException we, HttpServletRequest request, HttpServletResponse response) {
+		Map<String, Object> message = new HashMap<String, Object>();
+		
+		int errorCode = we.getErrorCode();
+		String errorMsg = we.getMessage();
+		
+		if(errorCode == RolePostException.WEB_PRIV_READ_FORBIDDEN) {
+			errorMsg = "";
+		} else if(errorCode == RolePostException.WEB_PRIV_WRITE_FORBIDDEN) {
+			errorMsg = "";
+		} else if(errorCode == RolePostException.WEB_PRIV_PROC_FORBIDDEN) {
+			errorMsg = "";
+		}
+		
+		message.put("code", errorCode);
+		message.put("message", "You do not have permission");
+		
+		response.setStatus(500);
+		
+		return message;
+	}
+}
+
+3. Controller에서 Exception 발생 시 커스텀 Exception을 발생시킨다.
+@ResponseBody
+	@RequestMapping("/dealerInformation/deleteDlrCdVariant")
+	public Map<String, Object> deleteDlrCdVariant(HttpSession session, @RequestBody DealerCdVariantVO param) throws Exception{
+		Map<String, Object> result = new HashMap<String, Object>();
+		int cnt = 0;
+		try {
+			UserInfoVO userInfo = (UserInfoVO) session.getAttribute("userInfo");
+			param.setUserId(userInfo.getUserId());
+			result = dealerInformationService.deleteDlrCdVariant(param);
+			cnt = (int) result.get("resCnt");
+			if(cnt != 0) {
+				throw new WebException(cnt);
+			}
+		} catch (WebException e) {
+			throw new WebException(cnt);
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new WebException(e);
+		}
+		return result;
+	}
+  
+  4. Custom Exception 클래스
+  /*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+package com.aftersales.pltfrm.web.common.exception;
+
+/**
+ * <pre>
+ * com.aftersales.pltfrm.web.common.exception 
+ *    |_ WebException.java
+ * 
+ * </pre>
+ * 
+ * @date : 2019. 11. 20. 오후 2:26:52
+ * @version :
+ * @author : A931744
+ */
+public class WebException extends Exception {
+
+	private static final long serialVersionUID = -7832321508719676851L;
+
+	////////////////////////////////////////////////
+	// ## 개발도중 필요한 Error Code를 추가하여 사용하세요. ## //
+	////////////////////////////////////////////////
+	// WEB General Error
+	public final static String WEB_NON_SPECIFY_ERROR 					= "9999";
+
+	// WEB URL Error
+	public final static String WEB_URL_404 								= "0009";
+	public final static String WEB_URL_500 								= "0010";
+	public final static String WEB_URL_BODY_INVALID 					= "0011";
+	public final static String WEB_URL_CONNECTION_FAILED 				= "0012";
+
+	// WEB Request / Response Errors
+	public final static String WEB_REQUEST_BODY_INVALID 				= "0020";
+	public final static String WEB_RESPONSE_BODY_INVALID 				= "0021";
+
+	// DataBase Query Error
+	public final static String WEB_DB_QUERY_FAILED 						= "0101";
+	
+	// WEB Privilege Error
+	public final static String WEB_PRIV_READ_FORBIDDEN 					= "0301";
+	public final static String WEB_PRIV_WRITE_FORBIDDEN 				= "0302";
+	public final static String WEB_PRIV_PROC_FORBIDDEN 					= "0303";
+	
+	// Web session expire
+	public final static String WEB_SESSION_EXPIRED						= "0501";
+	public final static String WEB_DUPLICATION_LOGIN					= "0502";
+	public final static String WEB_NO_AUTH								= "0503";
+	////////////////////////////////////////////////
+
+	private int    svrErrCode;
+	private String errorCode;
+	private String message;
+
+	public WebException(int svrErrCode) {
+		this.svrErrCode = svrErrCode;
+	}
+	
+	public WebException(String message, Throwable cause) {
+		super(message, cause);
+		this.errorCode = WEB_NON_SPECIFY_ERROR;
+		this.message = message;
+	}
+
+	public WebException(String message) {
+		super(message);
+		this.errorCode = WEB_NON_SPECIFY_ERROR;
+		this.message = message;
+	}
+	
+	public WebException(Throwable cause) {
+		super(cause);
+	}
+
+	public WebException(Throwable cause, String errorCode) {
+		super(cause);
+		this.errorCode = errorCode;
+		this.message = cause.getMessage();
+	}
+
+	public WebException(String message, Throwable cause, String errorCode) {
+		super(message, cause);
+		this.errorCode = errorCode;
+		this.message = message;
+	}
+
+	public WebException(String message, String errorCode) {
+		super(message);
+		this.errorCode = errorCode;
+		this.message = message;
+	}
+
+	/**
+	 * @return the errorCode
+	 */
+	public String getErrorCode() {
+		return errorCode;
+	}
+
+	/**
+	 * @param errorCode the errorCode to set
+	 */
+	public void setErrorCode(String errorCode) {
+		this.errorCode = errorCode;
+	}
+	
+	public String getMessage() {
+		return message;
+	}
+
+	public int getSvrErrCode() {
+		return svrErrCode;
+	}
+
+	public void setSvrErrCode(int svrErrCode) {
+		this.svrErrCode = svrErrCode;
+	}
+	
+}
