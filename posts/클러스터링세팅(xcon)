@@ -1,0 +1,106 @@
+// 운영 내부
+jdbc.mariadb.driver=com.mysql.cj.jdbc.Driver
+jdbc.mariadb.url=jdbc:mysql://10.6.119.175:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+jdbc.mariadb.username=xconn
+jdbc.mariadb.password=xconn123
+
+## Repository (MariaDB) properties (Connect At OUTSIDE DB)
+jdbc.mariadb.out.driver=org.mariadb.jdbc.Driver
+jdbc.mariadb.out.url=jdbc:mariadb:sequential://10.6.55.40:3306,10.6.55.59:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+jdbc.mariadb.out.username=xconn
+jdbc.mariadb.out.password=xconn123
+
+
+jdbc.mariadb.url.server.static=jdbc:mysql://10.6.119.175:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+
+elasticsearch.cluster=XConnector
+elasticsearch.host=10.6.119.175
+elasticsearch.port=9201
+elasticsearch.transport.port=9301
+elasticsearch.username=
+elasticsearch.password=
+elasticsearch.hostPorts=10.6.119.175:9201,10.6.119.175:9202,10.6.119.175:9203
+elasticsearch.hostTransports=10.6.119.175:9301,10.6.119.175:9302,10.6.119.175:9303
+
+## ElasticSearch Outside properties
+elasticsearch.out.cluster=XConnector
+#elasticsearch.out.host=localhost
+#elasticsearch.out.port=9200
+#elasticsearch.out.transport.port=9300
+elasticsearch.out.username=
+elasticsearch.out.password=
+elasticsearch.out.hostPorts=10.6.55.40:9201,10.6.55.40:9202,10.6.55.59:9203,10.6.55.59:9204
+elasticsearch.out.hostTransports=10.6.55.40:9301,10.6.55.40:9302,10.6.55.59:9303,10.6.55.59:9304
+
+
+운영 외부 1 ---40
+
+jdbc.mariadb.driver=org.mariadb.jdbc.Driver
+jdbc.mariadb.url=jdbc:mariadb:sequential://10.6.55.40:3306,10.6.55.59:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+jdbc.mariadb.username=xconn
+jdbc.mariadb.password=xconn123
+
+
+## Repository (MariaDB) properties (Connect At OUTSIDE DB)
+jdbc.mariadb.out.driver=org.mariadb.jdbc.Driver
+jdbc.mariadb.out.url=jdbc:mariadb:sequential://10.6.55.40:3306,10.6.55.59:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+jdbc.mariadb.out.username=xconn
+jdbc.mariadb.out.password=xconn123
+
+
+jdbc.mariadb.url.server.static=jdbc:mariadb:sequential://10.6.55.40:3306,10.6.55.59:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+
+
+elasticsearch.cluster=XConnector
+elasticsearch.host=10.6.55.40
+elasticsearch.port=9201
+elasticsearch.transport.port=9301
+elasticsearch.hostPorts=10.6.55.40:9201,10.6.55.40:9202,10.6.55.59:9203,10.6.55.59:9204
+elasticsearch.hostTransports=10.6.55.40:9301,10.6.55.40:9302,10.6.55.59:9303,10.6.55.59:9304
+elasticsearch.username=
+elasticsearch.password=
+
+## ElasticSearch Outside properties
+elasticsearch.out.cluster=XConnector
+#elasticsearch.out.host=localhost
+#elasticsearch.out.port=9200
+#elasticsearch.out.transport.port=9300
+elasticsearch.out.hostPorts=10.6.55.40:9201,10.6.55.40:9202,10.6.55.59:9203,10.6.55.59:9204
+elasticsearch.out.hostTransports=10.6.55.40:9301,10.6.55.40:9302,10.6.55.59:9303,10.6.55.59:9304
+elasticsearch.out.username=
+elasticsearch.out.password=
+
+운영 외부 2 ---59
+
+jdbc.mariadb.driver=org.mariadb.jdbc.Driver
+jdbc.mariadb.url=jdbc:mariadb:sequential://10.6.55.59:3306,10.6.55.40:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+jdbc.mariadb.username=xconn
+jdbc.mariadb.password=xconn123
+
+## Repository (MariaDB) properties (Connect At OUTSIDE DB)
+jdbc.mariadb.out.driver=org.mariadb.jdbc.Driver
+jdbc.mariadb.out.url=jdbc:mariadb:sequential://10.6.55.59:3306,10.6.55.40:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+jdbc.mariadb.out.username=xconn
+jdbc.mariadb.out.password=xconn123
+
+jdbc.mariadb.url.server.static=jdbc:mariadb:sequential://10.6.55.59:3306,10.6.55.40:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
+
+elasticsearch.cluster=XConnector
+elasticsearch.host=10.6.55.59
+elasticsearch.port=9203
+elasticsearch.transport.port=9303
+elasticsearch.hostPorts=10.6.55.59:9203,10.6.55.59:9204,10.6.55.40:9201,10.6.55.40:9202
+elasticsearch.hostTransports=10.6.55.59:9303,10.6.55.59:9304,10.6.55.40:9301,10.6.55.40:9302
+elasticsearch.username=
+elasticsearch.password=
+
+
+## ElasticSearch Outside properties
+elasticsearch.out.cluster=XConnector
+#elasticsearch.out.host=localhost
+#elasticsearch.out.port=9200
+#elasticsearch.out.transport.port=9300
+elasticsearch.out.hostPorts=10.6.55.59:9203,10.6.55.59:9204,10.6.55.40:9201,10.6.55.40:9202
+elasticsearch.out.hostTransports=10.6.55.59:9303,10.6.55.59:9304,10.6.55.40:9301,10.6.55.40:9302
+elasticsearch.out.username=elastic
+elasticsearch.out.password=Qazmlp2!
