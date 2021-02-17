@@ -1,9 +1,14 @@
+-IC상황이 내부운영은 한대, 외부운영은 두개이고 외부운영끼리 클러스터링 되 있음
+-MariaDB클러스터링 하면 메모리 DB는 동기화 되지 않는다
+
+
 // 운영 내부
 jdbc.mariadb.driver=com.mysql.cj.jdbc.Driver
 jdbc.mariadb.url=jdbc:mysql://10.6.119.175:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
 jdbc.mariadb.username=xconn
 jdbc.mariadb.password=xconn123
 
+// 내부운영서버에서 외부운영서버 DB보기위한 연결 주소
 ## Repository (MariaDB) properties (Connect At OUTSIDE DB)
 jdbc.mariadb.out.driver=org.mariadb.jdbc.Driver
 jdbc.mariadb.out.url=jdbc:mariadb:sequential://10.6.55.40:3306,10.6.55.59:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
@@ -14,11 +19,15 @@ jdbc.mariadb.out.password=xconn123
 jdbc.mariadb.url.server.static=jdbc:mysql://10.6.119.175:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
 
 elasticsearch.cluster=XConnector
-elasticsearch.host=10.6.119.175
-elasticsearch.port=9201
-elasticsearch.transport.port=9301
+-원래 서버에서 es연결을 하나만 했으면 쓰는 주소 값들이지만 연결된 es가 죽었을시 클러스터된 다른 es쪽에 붙어야 하기 때문에 서버와 es쪽 커넥션을 여러개 설정
+ 그래서 elasctic config 쪽도 커넥션 여러개 하게 
+
+#elasticsearch.host=10.6.119.175
+#elasticsearch.port=9201                   예전주소값들
+#elasticsearch.transport.port=9301
 elasticsearch.username=
 elasticsearch.password=
+-바뀌 여러 
 elasticsearch.hostPorts=10.6.119.175:9201,10.6.119.175:9202,10.6.119.175:9203
 elasticsearch.hostTransports=10.6.119.175:9301,10.6.119.175:9302,10.6.119.175:9303
 
@@ -33,6 +42,7 @@ elasticsearch.out.hostPorts=10.6.55.40:9201,10.6.55.40:9202,10.6.55.59:9203,10.6
 elasticsearch.out.hostTransports=10.6.55.40:9301,10.6.55.40:9302,10.6.55.59:9303,10.6.55.59:9304
 
 
+운영외부 두개끼리 클러스터링
 운영 외부 1 ---40
 
 jdbc.mariadb.driver=org.mariadb.jdbc.Driver
@@ -52,9 +62,9 @@ jdbc.mariadb.url.server.static=jdbc:mariadb:sequential://10.6.55.40:3306,10.6.55
 
 
 elasticsearch.cluster=XConnector
-elasticsearch.host=10.6.55.40
-elasticsearch.port=9201
-elasticsearch.transport.port=9301
+#elasticsearch.host=10.6.55.40
+#elasticsearch.port=9201
+#elasticsearch.transport.port=9301
 elasticsearch.hostPorts=10.6.55.40:9201,10.6.55.40:9202,10.6.55.59:9203,10.6.55.59:9204
 elasticsearch.hostTransports=10.6.55.40:9301,10.6.55.40:9302,10.6.55.59:9303,10.6.55.59:9304
 elasticsearch.username=
@@ -86,9 +96,9 @@ jdbc.mariadb.out.password=xconn123
 jdbc.mariadb.url.server.static=jdbc:mariadb:sequential://10.6.55.59:3306,10.6.55.40:3306/xconnector?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull
 
 elasticsearch.cluster=XConnector
-elasticsearch.host=10.6.55.59
-elasticsearch.port=9203
-elasticsearch.transport.port=9303
+#elasticsearch.host=10.6.55.59
+#elasticsearch.port=9203
+#   elasticsearch.transport.port=9303
 elasticsearch.hostPorts=10.6.55.59:9203,10.6.55.59:9204,10.6.55.40:9201,10.6.55.40:9202
 elasticsearch.hostTransports=10.6.55.59:9303,10.6.55.59:9304,10.6.55.40:9301,10.6.55.40:9302
 elasticsearch.username=
