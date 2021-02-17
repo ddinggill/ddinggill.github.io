@@ -32,5 +32,20 @@
 								소켓TCP방식이기 떄문에 접속포트는 elasticsearch.yml의 trans.tcp.port값과 일치해야한다.
  REST방식인 RestHighLevelClient -HTTP방식을 이용해 엘라스틱 서치와 통신, 내부적으로 HttpClient모듈을 사용, HTTPS 사용이 가능
 								HTTPREST방식이기 떄문에 접속포트는 elasticsearch.yml의 http.port값과 일치해야한다.
+      
+ 
+cluster.name: XConnector
+node.name: XCON_1
+node.attr.rack: XCON_R1
+path.data: data
+path.logs: logs
+network.host: 10.7.149.46
+http.port: 9201
+transport.tcp.port: 9301
+discovery.zen.ping.unicast.hosts: ["10.7.149.46:9301","10.7.149.46:9302","10.7.149.47:9303","10.7.149.47:9302"]
+discovery.zen.minimum_master_nodes: 1
+bootstrap.system_call_filter: false
+xpack.security.enabled: false
+node.master : true
 
 
