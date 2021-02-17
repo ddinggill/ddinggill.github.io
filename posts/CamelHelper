@@ -1,0 +1,315 @@
+package com.xconnect.eai.server.common.util;
+
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.ProducerTemplate;
+import org.apache.camel.ServiceStatus;
+import org.apache.camel.model.RouteDefinition;
+import org.elasticsearch.cluster.metadata.AliasAction.NewAliasValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ConfigurableApplicationContext;
+
+import com.google.gson.Gson;
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.dao.service.component.CamelComponentDAO;
+import com.xconnect.eai.server.common.vo.BigDataDocument;
+import com.xconnect.eai.server.common.vo.service.processor.SystemHeaderMappingInfoVO;
+
+public class CamelHelper {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CamelHelper.class);
+	
+	private static CamelHelper instance = null;
+	
+	// EAI Server ID
+	private static String ServerId = "";
+	
+	// Spring Boot Application Context
+	private static ConfigurableApplicationContext ctx;
+	
+	// Debug Camel Context & producer template
+	private static CamelContext debugCamelContext;
+	private static ProducerTemplate debugProducerTemplate;
+	
+	// Camel Router Producer Template
+	private static ProducerTemplate producerTemplate;
+	
+	// Bigdata Storage insert data List Queue
+	private List<BigDataDocument> bigdataDocumentList = new ArrayList<BigDataDocument>();
+	
+	// This Server is Master or Slave ?
+	private static boolean isMaster;
+	
+	// Interface Schedule Job Future Info Map
+	// Map -> __JOB_FINISHED_TIME__ (String, yyyyMMddHHmmss포맷) , __FUTURE__ (CompletableFuture<Exchange>) 두개의 정보를 갖는다.
+	private static ConcurrentHashMap<String, Map<String, Object>> ifScheduleJobInfoMap = new ConcurrentHashMap<>();
+	
+	// CPU Load Percent
+	private static LinkedList<Double> cpuLoad = new LinkedList<>();
+	// CPU Load Average Percent in Minute
+	private static double cpu_load_average_min_per = 0;
+	
+	// Camel Component에서 사용하는 ComponentDAO
+	private static CamelComponentDAO camelComponentDAO;
+	
+	// SSE push에서 사용하는 유저세션 정보
+	private static ConcurrentHashMap<String, Map<String, Boolean>> userSessionInfoMap = new ConcurrentHashMap<>();
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//               인증체크에서 사용할 기준정보 메모리 맵 (MetaInfoLoadingProcessor 에서 주기적으로 로딩해준다.)
+	// 1. Basic Auth Check를 위한 ID, Map 정보 Map (Map의 내용에는 TB_COM_CLI_AUTH_INFO, TB_COM_PARTNER_AUTH_INFO 테이블 정보 담김) 
+	//                             CLIENT_KIND = SYSTEM이면 TB_COM_CLI_AUTH_INFO, PARTNER이면 TB_COM_PARTNER_AUTH_INFO 테이블
+	public static Map<String, Map<String, Object>> basicAuthInfoMap							= new TreeMap<>(String.CASE_INSENSITIVE_ORDER); //new ConcurrentHashMap<>();
+	// 2. 인터페이스 시스템 정보 테이블 기준정보 (Map에는  SYSTEM_NO, SYSTEM_ID, PTNR_ID 를 키로하여 TB_COM_IF_SYSTEM_INFO 테이블 정보가 담김)
+	public static ConcurrentHashMap<Object, Map<String, Object>> interfaceSystemInfoMap		= new ConcurrentHashMap<>();
+	// 3. 파트너 실행불가 인터페이스 목록 기준정보 리스트 (Map에는 PTNR_ID, IF_ID, APPLY_START_DT, APPLY_END_DT 정보가 담긴다.)
+	public static ArrayList<Map<String, Object>> partnerForbiddenIfList						= new ArrayList<>();
+	// 4. 실행인터페이스 Map (key : IF_ID_IF_VER , val : TB_DEV_RUNNING_INTERFACE table)
+	public static ConcurrentHashMap<String, Map<String, Object>> runningInterfaceInfoMap	= new ConcurrentHashMap<>();
+	// 5. 시스템 헤더 매핑정보 (key : SYSTEM_ID, val : SystemHeaderMappingInfoVO)
+	public static ConcurrentHashMap<String, List<SystemHeaderMappingInfoVO>> systemHeaderMappingInfoListMap = new ConcurrentHashMap<>();
+	// 6. 인터페이스 Validation Check Data Structure Info Map
+	public static ConcurrentHashMap<String, Object> ifValidationCheckerInfoListMap 			= new ConcurrentHashMap<>();
+	// 7. 인터페이스 URI Mapping Info Map (TB_COM_IF_URI_MAPPING 테이블 정보가 담긴다.)
+	public static ConcurrentHashMap<String, Map<String, Object>> ifUriMappingInfoListMap 	= new ConcurrentHashMap<>();
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+	// License encrypt/decrypt key
+	public static String licEncKey = "/LB9g+uVv4JGsk1ZonsYZFcRPhiCbazmp4pSexQWUbvZKNNepgHt5WkH94T8+tJQGxLMKAg8HswK+r8J49cKZpJ+pmlapBnSigCa5p95+JwKmPGW";
+	
+	// Transaction Logging
+	private XConnectorFileLogger txLogger;
+	private String logFileDt = "";
+	private final String txLogDir = System.getProperty("LOG_PATH", "") + File.separator + "/txlog";
+	
+	protected CamelHelper() {
+		init();
+	}
+	
+	private void init() {
+		try {
+			// Tx Logger 생성
+			logFileDt = new SimpleDateFormat("yyyyMMdd").format(new Date());
+			String txLogFile = "call_tx_log." + logFileDt + ".log";
+			txLogger = new XConnectorFileLogger(txLogDir, txLogFile);
+		} catch (Exception e) {
+			//
+		}
+	}
+
+	static {
+		if (instance == null) {
+			instance = new CamelHelper();
+		}
+	}
+
+	public static CamelHelper getInstance() {
+		return instance;
+	}
+	
+	
+	public ConfigurableApplicationContext getContext() {
+		return ctx;
+	}
+	public void setContext(ConfigurableApplicationContext ctx) {
+		CamelHelper.ctx = ctx;
+	}
+	public CamelContext getDebugCamelContext() {
+		return debugCamelContext;
+	}
+	public void setDebugCamelContext(CamelContext debugCamelContext) {
+		CamelHelper.debugCamelContext = debugCamelContext;
+	}
+	public ProducerTemplate getDebugProducerTemplate() {
+		return debugProducerTemplate;
+	}
+	public void setDebugProducerTemplate(ProducerTemplate debugProducerTemplate) {
+		CamelHelper.debugProducerTemplate = debugProducerTemplate;
+	}
+	public ProducerTemplate getProducerTemplate() {
+		return producerTemplate;
+	}
+	public void setProducerTemplate(ProducerTemplate producerTemplate) {
+		CamelHelper.producerTemplate = producerTemplate;
+	}
+	public boolean isMaster() {
+		return isMaster;
+	}
+	public void setMaster(boolean isMaster) {
+		CamelHelper.isMaster = isMaster;
+		
+		if(this.getContext() != null) {
+			CamelContext camelCtx = this.getContext().getBean(SystemCommonConstants.CAMEL_CONTEXT_ID, CamelContext.class);
+			if(camelCtx != null) {
+				RouteDefinition logListener = camelCtx.getRouteDefinition(SystemCommonConstants.CAMEL_LOG_LISTENER_ROUTE_ID);
+				if(logListener != null) {
+					if(isMaster) {
+						ServiceStatus status = logListener.getStatus(camelCtx);
+						if(!status.isStarted()) {
+							try {
+								camelCtx.startRoute(SystemCommonConstants.CAMEL_LOG_LISTENER_ROUTE_ID);
+							} catch (Exception e) {}
+						}
+					} else {
+						ServiceStatus status = logListener.getStatus(camelCtx);
+						if(status.isStarted()) {
+							try {
+								camelCtx.stopRoute(SystemCommonConstants.CAMEL_LOG_LISTENER_ROUTE_ID);
+							} catch (Exception e) {
+								e.printStackTrace();
+							}
+						}
+					}
+				}
+				//인터페이스 통계 메모리 DB에서 디스크DB로 저장하는 라우터 설정변경
+//				RouteDefinition logSummaryListener = camelCtx.getRouteDefinition("XCONNECT_EAI_SERVER_LOGSUMMARY_SCHEDULE_HANDLER_ROUTER");
+//				if(logSummaryListener != null) {
+//					if(isMaster) {
+//						ServiceStatus status = logSummaryListener.getStatus(camelCtx);
+//						if(!status.isStarted()) {
+//							try {
+//								camelCtx.startRoute("XCONNECT_EAI_SERVER_LOGSUMMARY_SCHEDULE_HANDLER_ROUTER");
+//							} catch (Exception e) {}
+//						}
+//					} else {
+//						ServiceStatus status = logSummaryListener.getStatus(camelCtx);
+//						if(status.isStarted()) {
+//							try {
+//								camelCtx.stopRoute("XCONNECT_EAI_SERVER_LOGSUMMARY_SCHEDULE_HANDLER_ROUTER");
+//							} catch (Exception e) {
+//								e.printStackTrace();
+//							}
+//						}
+//					}
+//				}
+			}
+		}
+	}
+	public ConcurrentHashMap<String, Map<String, Object>> getIfScheduleJobInfoMap() {
+		return ifScheduleJobInfoMap;
+	}
+	public void setIfScheduleJobInfoMap(ConcurrentHashMap<String, Map<String, Object>> ifScheduleJobInfoMap) {
+		CamelHelper.ifScheduleJobInfoMap = ifScheduleJobInfoMap;
+	}
+	public CamelComponentDAO getCamelComponentDAO() {
+		return camelComponentDAO;
+	}
+	public void setCamelComponentDAO(CamelComponentDAO camelComponentDAO) {
+		CamelHelper.camelComponentDAO = camelComponentDAO;
+	}
+
+	// system cpu load %
+	public LinkedList<Double> getCpuLoad() {
+		return cpuLoad;
+	}
+	public void addCpuLoad(double cpu_load) {
+		CamelHelper.cpuLoad.add(cpu_load);
+		calc_cpu_load_average_min_per();
+	}
+	// system cpu load average in minute
+	public double getCpu_load_average_min_per() {
+		return CamelHelper.cpu_load_average_min_per;
+	}
+	// 분당 평균 Cpu load average 구함
+	private void calc_cpu_load_average_min_per() {
+		try {
+			if(CamelHelper.cpuLoad.size() < 1) return;
+			int toIndex = 0;
+			toIndex = (CamelHelper.cpuLoad.size() > 60) ? 60 : CamelHelper.cpuLoad.size();
+			List<Double> subList = CamelHelper.cpuLoad.subList(0, toIndex);
+			double cpu_load = 0;
+			for(Iterator<Double> iter = subList.iterator(); iter.hasNext();) {
+				cpu_load += iter.next();
+			}
+			CamelHelper.cpu_load_average_min_per = (cpu_load / subList.size());
+			
+			// 60개를 제외한 이전 List 삭제
+			if(CamelHelper.cpuLoad.size() > 60) CamelHelper.cpuLoad.subList(0, CamelHelper.cpuLoad.size() - 60).clear();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	public String getServerId() {
+		return ServerId;
+	}
+	public void setServerId(String serverId) {
+		ServerId = serverId;
+	}
+	// Get Transaction File Logger
+	public XConnectorFileLogger getTxLogger() {
+		return txLogger;
+	}
+
+	//////////////////////////////////////////////////////////////////////
+	// ES IF Log insert ...
+	public List<BigDataDocument> getBigdataDocumentList() {
+		return bigdataDocumentList;
+	}
+	public void insert_bulk_bigdata_storage(BigDataDocument bigdataDoc) {
+		bigdataDocumentList.add(bigdataDoc);
+	}
+	
+	//userSessinInfoMap...
+	public ConcurrentHashMap<String, Map<String, Boolean>> getUserSessionInfoMap(){
+		return userSessionInfoMap;
+	}
+	public void addEmitter(String emitter, String sessionId) {
+		Map<String, Boolean> sessionMap = new LinkedHashMap<String, Boolean>();
+		sessionMap.put(sessionId, true);
+		userSessionInfoMap.put(emitter, sessionMap);
+	}
+	
+	//////////////////////////////////////////////////////////////////////
+	// Tx Log logging
+	public void txLog(String msg) {
+		String curDt = new SimpleDateFormat("yyyyMMdd").format(new Date());
+		// 날짜가 바뀌면 새로운 Logger 생성
+		if(!curDt.equalsIgnoreCase(logFileDt)) {
+			logFileDt = curDt;
+			String txLogFile = "call_tx_log." + logFileDt + ".log";
+			txLogger = new XConnectorFileLogger(txLogDir, txLogFile);
+		}
+		txLogger.log(msg);
+	}
+	
+	public void txLog(String exception, String msgCode, String originalMsg, Map<String, Object> headerMap) {
+		try {
+			txLog(exception + "\n#### Original Message =====>\n" + originalMsg);
+
+			SimpleDateFormat sdf = new SimpleDateFormat();
+			sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
+			sdf.applyPattern("yyyy-MM-dd HH:mm:ss");
+			String insertDt = sdf.format(new Date());
+			sdf.applyPattern("yyyyMMdd");
+			String partitionDt = sdf.format(new Date());
+			
+			// TB_ADM_HTTP_ERROR_LOG table에 로그 저장
+			Map<String, Object> paramMap = new HashMap<String, Object>();
+			paramMap.put("INSERT_DT", insertDt);
+			paramMap.put("PARTITION_DT", partitionDt);
+			paramMap.put("SVR_ID", getServerId());
+			paramMap.put("EXCEPTION", exception);
+			paramMap.put("EXCHANGE_BODY", originalMsg);
+			paramMap.put("HTTP_HEADER", new Gson().toJson(headerMap));
+			paramMap.put("WORD_ID", msgCode);
+			getCamelComponentDAO().insertHttpErrorLog(paramMap);
+
+		} catch (Exception e) {
+			LOG.error("[CamelHelper] >> txLog > Error! :: {}", CommonUtils.getPrintStackTrace(e));
+		}
+	}
+}
