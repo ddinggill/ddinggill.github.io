@@ -1,0 +1,429 @@
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.common.elasticsearch;
+
+import java.net.InetAddress;
+import java.util.Arrays;
+import java.util.Objects;
+
+import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.xpack.client.PreBuiltXPackTransportClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import com.xconnect.eai.server.common.util.CommonUtils;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.common.elasticsearch 
+ *    |_ ElasticsearchConfig.java
+ * 
+ * </pre>
+ * 
+ * @date : 2019. 11. 19. �삤�썑 3:52:26
+ * @version :
+ * @author : A931744
+ */
+@Configuration
+public class ElasticsearchConfig {
+
+	private static final Logger LOG = LoggerFactory.getLogger(ElasticsearchConfig.class);
+	private static final int ADDRESS_LENGTH = 2;
+	private String scheme	=	"http";	
+
+	
+//	@Value("${elasticsearch.host: 127.0.0.1}")
+//	private String elasticsearchHost;
+
+	@Value("${elasticsearch.hostPorts: 127.0.0.1:9201}")
+	private String elasticsearchHostPorts;
+	
+	@Value("${elasticsearch.hostTransports: 127.0.0.1:9301}")
+	private String elasticsearchHostTransports;
+	
+//	@Value("${elasticsearch.port: 9200}")
+//	private int elasticsearchPort;
+//	
+//	@Value("${elasticsearch.transport.port: 9300}")
+//	private int elasticsearchTrnsPort;
+
+	@Value("${elasticsearch.username: elastic}")
+	private String userName;
+
+	@Value("${elasticsearch.password: 1234}")
+	private String password;
+
+	@Bean(destroyMethod = "close")
+	public RestHighLevelClient client() {
+		try {
+			final CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+			credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(userName, password));
+
+			String[] arrElasticsearchHostPorts		=	elasticsearchHostPorts.split(",");
+			HttpHost[] hosts = Arrays.stream(arrElasticsearchHostPorts)
+	                .map(this::makeHttpHost)
+	                .filter(Objects::nonNull)
+	                .toArray(HttpHost[]::new);
+	        RestClientBuilder builder = RestClient.builder(hosts)
+	        		.setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider))
+					;
+	                 // Set up a listener and receive notification every time a no			
+			
+			// TODO ElasticSearch credential �꽕�젙 �븷寃�
+//			RestClientBuilder builder = RestClient.builder(new HttpHost(elasticsearchHost, elasticsearchPort))
+//					//.setFailureListener(new LoggingFailureListener())
+//					 .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider))
+//					;
+
+			RestHighLevelClient client = new RestHighLevelClient(builder);
+//			LOG.debug("[ElasticsearchConfig] >> client :: " + client + ", host=" + elasticsearchHost + ", port=" + elasticsearchPort);
+			return client;
+		} catch (Exception e) {
+			LOG.error("[ElasticsearchConfig] >> client :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return null;
+		}
+	}
+	
+    /**
+           * Create HttpHost according to configuration
+     * @param s
+     * @return
+     */
+    private HttpHost makeHttpHost(String s) {
+        String[] address = s.split(":");
+        if (address.length == ADDRESS_LENGTH) {
+            String ip = address[0];
+            int port = Integer.parseInt(address[1]);
+            return new HttpHost(ip, port, scheme);
+        } else {
+            return null;
+        }
+    }
+
+	@SuppressWarnings({ "resource" })
+	@Bean(destroyMethod = "close")
+	public TransportClient ts_client() {
+		try {
+	        Settings settings = Settings.builder()
+	        					//.put("xpack.security.user", userName + ":" + password)
+	        					.put("client.transport.ignore_cluster_name",true)
+	        					.build();
+	        
+//	        Settings settings = Settings.builder()
+//	        	    .put("transport.ping_schedule", "5s")
+//	        	    //.put("transport.sniff", false) // Disabled by default and *must* be disabled.
+//	        	    .put("client.transport.ignore_cluster_name",true)
+//	        	    .put("action.bulk.compress", false)
+//	        	    .put("shield.transport.ssl", true)
+//	        	    .put("request.headers.X-Found-Cluster", "XConnector")
+//	        	    .put("shield.user", userName + ":" + password) // your shield username and password
+//	        	    .build();
+	        
+	        String[] arrElasticsearchHostTransports		=	elasticsearchHostTransports.split(",");
+	        TransportClient tsclient = new PreBuiltXPackTransportClient(settings);
+	        for(String host : arrElasticsearchHostTransports) {
+	        	String[] addr = host.split(":");
+	        	host = addr[0];
+	        	int port = Integer.parseInt(addr[1]);
+
+	        	tsclient.addTransportAddress(new TransportAddress(InetAddress.getByName(host), port));
+	        	LOG.debug("[ElasticsearchConfig] >> tsclient :: " + tsclient + ", host=" + host + ", port=" + port);
+	        }
+	        
+	        
+//			TransportClient tsclient = new PreBuiltXPackTransportClient(settings)
+//					.addTransportAddress(new TransportAddress(InetAddress.getByName(elasticsearchHost), elasticsearchTrnsPort));
+//			LOG.debug("[ElasticsearchConfig] >> tsclient :: " + tsclient + ", host=" + elasticsearchHost + ", port=" + elasticsearchTrnsPort);
+	        
+			return tsclient;
+		} catch (Exception e) {
+			LOG.error("[ElasticsearchConfig] >> ts_client :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return null;
+		}
+	}
+	
+//	public class LoggingFailureListener extends SniffOnFailureListener {
+//		public LoggingFailureListener() {
+//			super();
+//		}
+//		@Override
+//		public void onFailure(Node node) {
+//			LOG.debug("######## Node failed ::: " + node.getHost().getHostName() + ":" + node.getHost().getPort());
+//		}
+//	}
+
+}
+
+/*
+ * Copyright none.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of . ("Confidential Information").
+ */
+
+package com.xconnect.eai.server.common.elasticsearch; 
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import org.elasticsearch.action.bulk.BulkItemResponse;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.action.delete.DeleteRequest;
+import org.elasticsearch.action.delete.DeleteResponse;
+import org.elasticsearch.action.get.GetRequest;
+import org.elasticsearch.action.get.GetResponse;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.action.update.UpdateResponse;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.search.aggregations.Aggregations;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.nlpcn.es4sql.query.ESActionFactory;
+import org.nlpcn.es4sql.query.SqlElasticRequestBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.common.vo.BigDataDocument;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.common.elasticsearch 
+ *    |_ ElasticSearchManager.java
+ * 
+ * ** ElasticSearch Document CRUD 구현 서비스
+ * </pre>
+ * @date : 2019. 11. 19. 오후 3:46:18
+ * @version : 
+ * @author : A931744
+ */
+@Service("elasticSearchManager")
+public class ElasticSearchManager {
+
+	private static final Logger LOG = LoggerFactory.getLogger(ElasticSearchManager.class);
+
+	private RestHighLevelClient client;
+	private TransportClient tsclient;
+	
+	private ObjectMapper objectMapper;
+	
+  -생성자에 @Qualifier를 써서 명확하게 어떤 bean을 주입할것인지 명시하였다. 그 이유는 인천내부운영서버에서 외부운영서버의 es에 붙어야해서 RestHighLevelClient/TransportClient 형태의
+   bean이 두개가 올라가기 떄문에 내부주소와 커넥션된 client들을 주입해야 하므로
+	@Autowired
+    public ElasticSearchManager(@Qualifier("client") RestHighLevelClient client, @Qualifier("ts_client") TransportClient tsclient, ObjectMapper objectMapper) {
+        this.client = client;
+        this.objectMapper = objectMapper;
+        this.tsclient = tsclient;
+        LOG.debug("[ElasticSearchManager] >> ElasticSearchManager :: client=" + client);
+    }
+	
+	public List<EsCommonDoc> select(String index, String where_claus) throws Exception {
+		try {
+			String sql_query = String.format("SELECT * FROM %s WHERE %s", index, where_claus);
+
+			SqlElasticRequestBuilder select = ESActionFactory.create(tsclient, sql_query).explain();
+			
+			SearchHits searchResponse = ((SearchResponse)select.get()).getHits();
+			long total_found_num = searchResponse.getTotalHits();
+			
+			List<EsCommonDoc> resultList = new ArrayList<>();
+			for(Iterator<SearchHit> iter = searchResponse.iterator(); iter.hasNext();) {
+				SearchHit hit = iter.next();
+				Map<String, Object> resultMap = hit.getSourceAsMap();
+				EsCommonDoc doc = new EsCommonDoc(index, hit.getId(), new Gson().toJson(resultMap));
+				resultList.add(doc);
+			}
+			
+			return resultList;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> select :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	public List<EsCommonDoc> selectSql(String index, String sql_query) throws Exception {
+		try {
+			SqlElasticRequestBuilder select = ESActionFactory.create(tsclient, sql_query).explain();
+			
+			SearchHits searchResponse = ((SearchResponse)select.get()).getHits();
+			long total_found_num = searchResponse.getTotalHits();
+			
+			List<EsCommonDoc> resultList = new ArrayList<>();
+			for(Iterator<SearchHit> iter = searchResponse.iterator(); iter.hasNext();) {
+				SearchHit hit = iter.next();
+				Map<String, Object> resultMap = hit.getSourceAsMap();
+				EsCommonDoc doc = new EsCommonDoc(index, hit.getId(), new Gson().toJson(resultMap));
+				resultList.add(doc);
+			}
+			
+			
+			return resultList;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> select :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	public List<Map<String, Object>> selectAggregation(String index, String sql_query, String aggrKey) throws Exception {
+		List<Map<String, Object>> result = null;
+		try {
+			SqlElasticRequestBuilder select = ESActionFactory.create(tsclient, sql_query).explain();
+			
+			SearchResponse searchResponse = (SearchResponse)select.get();
+			Map<String, Aggregation> aggregationMap = searchResponse.getAggregations().asMap();
+			
+			String jsonStr = aggregationMap.get(aggrKey).toString();
+			
+			Map<String, Object> parsedMap = new Gson().fromJson(jsonStr, Map.class);
+			
+			Object buckets = ((Map)parsedMap.get(aggrKey)).get("buckets");
+			if(buckets instanceof List) {
+				result = (List) buckets;
+			}	
+			
+			return result;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> selectAggregation :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	
+	public EsCommonDoc findById(String index, String id) throws Exception {
+		try {
+			GetRequest getRequest = new GetRequest(index, "_doc", id);
+			
+			GetResponse getResponse = client.get(getRequest, RequestOptions.DEFAULT);
+			
+			Map<String, Object> resultMap = getResponse.getSource();
+			
+			return new EsCommonDoc(index, id, new Gson().toJson(resultMap));
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> findById :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+    }
+	
+	@SuppressWarnings("unchecked")
+	public String insert(EsCommonDoc doc) throws Exception {
+		try {
+			Map<String, Object> documentMapper = objectMapper.convertValue(doc.getDoc(), Map.class);
+			
+			IndexRequest indexRequest = new IndexRequest(doc.getIndex()).source(documentMapper);
+			IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
+			
+			return indexResponse.getResult().name();
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> createProfile :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+    }
+	
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public List<Map> bulkinsert(List<BigDataDocument> docs) throws Exception {
+		try {
+			BulkRequest bulkRequest = new BulkRequest();
+			LOG.debug("=============================================================");
+			LOG.debug("[ElasticSearchManager] >> bulkinsert :: " + docs.size());
+			LOG.debug("=============================================================");
+			for(BigDataDocument doc : docs) {
+				//Map<String, Object> documentMapper = objectMapper.convertValue(((EsCommonDoc)doc).getDoc(), Map.class);
+				Map<String, Object> docMap = (Map<String, Object>) ((EsCommonDoc)doc).getDoc();
+				IndexRequest indexRequest = new IndexRequest(((EsCommonDoc)doc).getIndex(), "_doc").source(docMap);
+				bulkRequest.add(indexRequest);
+			}
+			bulkRequest.timeout(TimeValue.timeValueMinutes(2));
+			BulkResponse blkResponse = client.bulk(bulkRequest, RequestOptions.DEFAULT);
+
+			// 저장실패 메시지를 Map에 담아 List로 보관
+			int fail_count = 0;
+			List<Map> fail_message_list = new ArrayList<Map>();
+			for(BulkItemResponse result : blkResponse.getItems()) {
+				if(result.isFailed()) {
+					fail_count ++;
+					Map<String, Object> resultMap = new HashMap<>();
+					resultMap.put("id", result.getId());
+					resultMap.put("fail_object", result.getFailure());
+					resultMap.put("fail_message", result.getFailureMessage());
+					fail_message_list.add(resultMap);
+				}
+			}
+			
+			return fail_message_list;
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> createProfile :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	@SuppressWarnings("unchecked")
+	public String update(EsCommonDoc doc) throws Exception {
+		try {
+			EsCommonDoc resultDocument = findById(doc.getIndex(), doc.getId());
+			
+			UpdateRequest updateRequest = new UpdateRequest( doc.getIndex(), "_doc", resultDocument.getId() );
+			
+			Map<String, Object> documentMapper = objectMapper.convertValue(doc.getDoc(), Map.class);
+			
+			updateRequest.doc(documentMapper);
+			
+			UpdateResponse updateResponse = client.update(updateRequest, RequestOptions.DEFAULT);
+			
+			return updateResponse.getResult().name();
+		} catch (Exception e) {
+			LOG.error( "[ElasticSearchManager] >> update :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+    }
+	
+	public String delete(String index, String id) throws Exception {
+		try {
+			DeleteRequest deleteRequest = new DeleteRequest(index, "_doc", id);
+			DeleteResponse response = client.delete(deleteRequest, RequestOptions.DEFAULT);
+			
+			return response.getResult().name();
+		} catch (Exception e) {
+			LOG.error("[ElasticSearchManager] >> delete :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+
+    }
+}
