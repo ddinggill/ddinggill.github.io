@@ -115,8 +115,9 @@ public class HandshakeProcessor implements Processor {
 			// Master 서버이면 interfaceLog 큐를 listen하는 라우터 start
 			CamelHelper.getInstance().setMaster(isMaster);
 			
-			// 본서버가 Master 서버이면 다른서버 Handshaking 할 필요 없음
-			if(isMaster) return;
+			// 현재상태가 Master 및 property 세팅도 Master이면 그냥 리턴
+			// 현재상태가 Master 이지만 property 세팅이 slave이면 핸드쉐이킹해서 master인 서버가 있으면 자기를 slave로 설정
+			if(isMaster && originIsMaster) return;
 			
 			// DB 정보에서 EAI 서버 리스트를 가져온다.
 			List<Map<String, Object>> eaiServerList = handShakingProcessorDAO.selectEaiServerInfoList();
@@ -138,6 +139,7 @@ public class HandshakeProcessor implements Processor {
 						boolean areYouMaster = handshake.handshake();						// 너 죽었니 살았니? 살았으면 너가 Master 서버니?
 						if(areYouMaster) {
 							isThereMasterServer = true;										// 응답받은 서버중 Master 서버가 있음
+							CamelHelper.getInstance().setMaster(false); //master가 죽어서 slave가 master 수행하고 있다가 master 다시 살아나면 자기는 slave로
 							break;															// 살아있는 서버가 Master이면 Handshaking을 진행하지 않음
 						}
 					} catch(RemoteException e) {
