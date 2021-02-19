@@ -1,0 +1,1214 @@
+1. 화면에서 새로운 스케쥴을 등록하면 스케줄정보 DB에 입력하고
+2. hazelCast를 통해 클러스터링된 모든 eai서버 들에게 작업 요청한다.
+3. 각 서버마다 작업 요청 핸들러에서 요청온 작업을 수행하는데 이떄 어떤 작업이냐에 따라 분기로 갈려진다.
+4. 스케줄 핸들러에서 스케줄 매니저를 통해 실제 작업 수행
+
+-1. 스케줄 컨트롤러
+/*
+ * Copyright Hyundai Auto Ever.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai Auto Ever. ("Confidential Information").
+ */
+
+package com.xconnect.eai.web.management.schedule.controller; 
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.servlet.ModelAndView;
+
+import com.xconnect.eai.server.service.processor.system.impl.vo.ScheduleJobVO.COMMAND;
+import com.xconnect.eai.web.common.exception.WebException;
+import com.xconnect.eai.web.common.util.CommonUtils;
+import com.xconnect.eai.web.management.schedule.service.ScheduleService;
+import com.xconnect.eai.web.management.schedule.vo.ScheduleRunHistVO;
+import com.xconnect.eai.web.management.schedule.vo.ScheduleVO;
+
+/**
+ * <pre>
+ * com.xconnect.eai.web.management.schedule.controller 
+ *    |_ ScheduleController.java
+ * 
+ * </pre>
+ * @date : 2020. 2. 4. 오전 11:11:51
+ * @version : 
+ * @author : A931161
+ */
+@Controller
+@RequestMapping(value="/management/schedule")
+public class ScheduleController {
+
+	private static final Logger LOG = LoggerFactory.getLogger(ScheduleController.class);
+
+	private static String WEB_PRIFIX_URL = "web/management/schedule";
+	
+	@Autowired
+	private ScheduleService scheduleService; 
+	
+	@Autowired
+	private MessageSource messageSource;
+
+	@RequestMapping(value="/schedule")
+	public ModelAndView schedule(ModelAndView mv) {
+		mv.setViewName(WEB_PRIFIX_URL+"/schedule");
+		return mv;
+	}
+	
+	@RequestMapping(value="/selectScheduleList")
+	@ResponseBody
+	public Map<String, Object> selectScheduleList(@RequestBody ScheduleVO scheduleVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			scheduleVO.init();
+			int cnt = scheduleService.selectScheduleCnt(scheduleVO);
+			scheduleVO.setTotalCnt(cnt);
+			
+			result.put("data", scheduleService.selectScheduleList(scheduleVO));
+			result.put("cnt", scheduleVO);
+
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}
+	
+	@RequestMapping(value="/insertSchedule")
+	@ResponseBody
+	public Map<String, Object> insertSchedule(@RequestBody ScheduleVO scheduleVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			int cnt = scheduleService.insertSchedule(scheduleVO);
+			
+			COMMAND command = null;
+			String scheduleStat = scheduleVO.getScheduleStatCd();
+			if("A".equalsIgnoreCase(scheduleStat))  command = COMMAND.REGIST;
+			else if("I".equalsIgnoreCase(scheduleStat)) command = COMMAND.DELETE;
+			
+			scheduleService.makeScheduleJob(command, scheduleVO);
+			
+			if(cnt == 1) {
+				result.put("result", cnt);
+			}else if(cnt == 0) {
+				result.put("result", cnt);
+				result.put("message", messageSource.getMessage("title.text.0095", null, LocaleContextHolder.getLocale()));
+			}else {
+				throw new Exception();
+			}
+			
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}
+	
+	//인터페이스 상태 변경
+	@RequestMapping(value="/updateScheduleStatChange")
+	@ResponseBody
+	public Map<String, Object> updateScheduleStatChange(@RequestBody ScheduleVO scheduleVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			int cnt = scheduleService.updateScheduleStatChange(scheduleVO);
+			
+			COMMAND command = null;
+			String scheduleStat = scheduleVO.getScheduleStatCd();
+			
+			if("A".equalsIgnoreCase(scheduleStat))  command = COMMAND.REGIST;
+			else if("I".equalsIgnoreCase(scheduleStat)) command = COMMAND.DELETE;
+			
+			scheduleService.makeScheduleJob(command, scheduleVO);
+			
+			if(cnt == 1) {
+				result.put("result", cnt);
+			}else if(cnt == 0) {
+				result.put("result", cnt);
+				result.put("message", messageSource.getMessage("title.text.0095", null, LocaleContextHolder.getLocale()));
+			}else {
+				throw new Exception();
+			}
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}	
+	
+	//인터페이스 상태 변경
+	@RequestMapping(value="/executeScheduleRunningChange")
+	@ResponseBody
+	public Map<String, Object> updateScheduleRunningChange(@RequestBody ScheduleVO scheduleVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			scheduleService.makeScheduleJob(COMMAND.RUNONCE, scheduleVO);
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}	
+	
+	@RequestMapping(value="/createSchedulePop")
+	public ModelAndView scheduleCreatePop(ModelAndView mv) throws Exception {
+		try {
+			mv.setViewName(WEB_PRIFIX_URL + "/scheduleCreatePop");
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return mv;
+	}
+	
+	@RequestMapping(value="/modifySchedulePop")
+	public ModelAndView scheduleDetailPop(@RequestBody ScheduleVO scheduleVO, ModelAndView mv) throws Exception {
+		try {
+			mv.addObject("data", scheduleService.selectSchedule(scheduleVO));
+			mv.setViewName(WEB_PRIFIX_URL + "/scheduleDetailPop");
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return mv;
+	}
+	
+	//스케줄 상태 변경
+	@RequestMapping(value="/updateSchedule")
+	@ResponseBody
+	public Map<String, Object> updateSchedule(@RequestBody ScheduleVO scheduleVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			int cnt = scheduleService.updateSchedule(scheduleVO);
+			
+			COMMAND command = null;
+			String scheduleStat = scheduleVO.getScheduleStatCd();
+			
+			if("A".equalsIgnoreCase(scheduleStat)) 	command = COMMAND.UPDATE;
+			else if("I".equalsIgnoreCase(scheduleStat)) command = COMMAND.DELETE;
+						
+			scheduleService.makeScheduleJob(command, scheduleVO);
+			
+			if(cnt == 1) {
+				result.put("result", cnt);
+			}else if(cnt == 0) {
+				result.put("result", cnt);
+				result.put("message", messageSource.getMessage("title.text.0095", null, LocaleContextHolder.getLocale()));
+			}else {
+				throw new Exception();
+			}
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}	
+	
+	//스케줄 삭제
+	@RequestMapping(value="/deleteSchedule")
+	@ResponseBody
+	public Map<String, Object> deleteSchedule(@RequestBody ScheduleVO scheduleVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try {
+			int cnt = scheduleService.deleteSchedule(scheduleVO);
+			String scheduleStatus = scheduleVO.getScheduleStatCd();
+			
+			if(!"Inactive".equalsIgnoreCase(scheduleStatus)) {
+				scheduleService.makeScheduleJob(COMMAND.DELETE, scheduleVO);
+			}
+			
+			if(cnt == 1) {
+				result.put("result", cnt);
+			}else if(cnt == 0) {
+				result.put("result", cnt);
+				result.put("message", messageSource.getMessage("title.text.0095", null, LocaleContextHolder.getLocale()));
+			}else {
+				throw new Exception();
+			}
+			
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}	
+	
+	@RequestMapping(value="/selectScheduleRunHistList")
+	@ResponseBody
+	public Map<String, Object> selectScheduleRunHistList(@RequestBody ScheduleRunHistVO scheduleRunHistVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			scheduleRunHistVO.init();
+			int cnt = scheduleService.selectScheduleRunHistCnt(scheduleRunHistVO);
+			scheduleRunHistVO.setTotalCnt(cnt);
+			
+			result.put("data", scheduleService.selectScheduleRunHistList(scheduleRunHistVO));
+			result.put("cnt", scheduleRunHistVO);
+
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}
+	
+	@RequestMapping(value="/detailScheduleRunHistPop")
+	public ModelAndView scheduleRunHistPop(@RequestBody ScheduleRunHistVO scheduleRunHistVO, ModelAndView mv) throws Exception {
+		try {
+			mv.addObject("data", scheduleRunHistVO);
+			mv.setViewName(WEB_PRIFIX_URL + "/scheduleRunHistPop");
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return mv;
+	}
+	
+	//실행인터페이스 중 '인터페이스 타입 = BTSD'인 인터페이스 리스트
+	@RequestMapping(value="/selectScheduleIfList")
+	@ResponseBody
+	public Map<String, Object> selectScheduleIfList(@RequestBody ScheduleVO scheduleVO) throws Exception{
+		Map<String, Object> result = new HashMap<>();
+		try{
+			scheduleVO.init();
+			
+			System.out.println("###### scheduleVO >> " + scheduleVO);
+			
+			int cnt = scheduleService.selectScheduleIfCnt(scheduleVO);
+			scheduleVO.setTotalCnt(cnt);
+			
+			result.put("data",scheduleService.selectScheduleIfList(scheduleVO));
+			result.put("cnt", scheduleVO);
+			
+		} catch(Exception e) {
+			LOG.error(CommonUtils.getPrintStackTrace(e));
+			throw new WebException(messageSource.getMessage("10002", null, LocaleContextHolder.getLocale()), e, WebException.WEB_DB_QUERY_FAILED);
+		}
+		return result;
+	}	
+}
+
+-2. 스케줄 서비스
+/*
+ * Copyright Hyundai Auto Ever.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai Auto Ever. ("Confidential Information").
+ */
+
+package com.xconnect.eai.web.management.schedule.service.impl; 
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.IExecutorService;
+import com.hazelcast.core.Member;
+import com.xconnect.eai.server.common.hazelcast.HazelCastManager;
+import com.xconnect.eai.server.service.processor.system.impl.ScheduleJobHandler;
+import com.xconnect.eai.server.service.processor.system.impl.vo.ScheduleJobVO;
+import com.xconnect.eai.server.service.processor.system.impl.vo.ScheduleJobVO.COMMAND;
+import com.xconnect.eai.web.management.interfaces.vo.RunningInterfaceVO;
+import com.xconnect.eai.web.management.schedule.dao.ScheduleDAO;
+import com.xconnect.eai.web.management.schedule.service.ScheduleService;
+import com.xconnect.eai.web.management.schedule.vo.ScheduleRunHistVO;
+import com.xconnect.eai.web.management.schedule.vo.ScheduleVO;
+
+/**
+ * <pre>
+ * com.xconnect.eai.web.management.schedule.service.impl 
+ *    |_ ScheduleServiceImpl.java
+ * 
+ * </pre>
+ * @date : 2020. 2. 4. 오전 11:15:19
+ * @version : 
+ * @author : A931161
+ */
+
+@Service("scheduleService")
+public class ScheduleServiceImpl implements ScheduleService{
+
+	private static final Logger LOG = LoggerFactory.getLogger(ScheduleServiceImpl.class);
+
+	@Autowired
+	private HazelCastManager hazelCastManager;
+	
+	@Resource(name="scheduleDAO")
+	private ScheduleDAO scheduleDAO;
+
+	@Override
+	public int selectScheduleCnt(ScheduleVO scheduleVO) throws Exception {
+		scheduleVO.setDelYn("N");
+		return scheduleDAO.selectScheduleCnt(scheduleVO);
+	}
+
+	@Override
+	public List<ScheduleVO> selectScheduleList(ScheduleVO scheduleVO) throws Exception {
+		scheduleVO.init();
+		scheduleVO.setDelYn("N");
+		return scheduleDAO.selectScheduleList(scheduleVO);
+	}
+
+	@Override
+	public int insertSchedule(ScheduleVO scheduleVO) throws Exception {
+		scheduleVO.init();
+		return scheduleDAO.insertSchedule(scheduleVO);
+	}
+	
+	@Override
+	public int updateScheduleStatChange(ScheduleVO scheduleVO) throws Exception {
+		scheduleVO.init();
+		return scheduleDAO.updateScheduleStatChange(scheduleVO);
+	}
+
+	@Override
+	public ScheduleVO selectSchedule(ScheduleVO scheduleVO) throws Exception {
+		return scheduleDAO.selectSchedule(scheduleVO);
+	}
+
+	@Override
+	public int updateSchedule(ScheduleVO scheduleVO) throws Exception {
+		scheduleVO.init();
+		return scheduleDAO.updateSchedule(scheduleVO);
+	}
+
+	@Override
+	public int deleteSchedule(ScheduleVO scheduleVO) throws Exception {
+		scheduleVO.init();
+		scheduleVO.setDelYn("Y");
+		return scheduleDAO.deleteSchedule(scheduleVO);
+	}
+
+	@Override
+	public void makeScheduleJob(COMMAND command, ScheduleVO scheduleVO) throws Exception {
+		// Schedule Job Hzcast deploy handler call ...
+		HazelcastInstance instance = hazelCastManager.getInstance();
+		IExecutorService executor = instance.getExecutorService("HzScheduleCluserService");
+		ScheduleJobVO vo = new ScheduleJobVO();
+		vo.setCommand(command);
+		vo.setScheduleInfoVo(scheduleVO);
+		Map<Member, Future<ScheduleJobVO>> resultMap = executor.submitToAllMembers(new ScheduleJobHandler(vo));
+		resultMap.keySet().stream().forEach((member) -> {
+			Future<ScheduleJobVO> future = resultMap.get(member);
+			try {
+				ScheduleJobVO resVo = future.get(30, TimeUnit.SECONDS);
+				String instance_id = member.getStringAttribute("InstanceID");
+				boolean result_flag = future.isDone();
+				String result_msg = resVo.getResultMsg();
+				boolean success = resVo.isResult();
+				
+//				System.out.println("####### resVo ::::::: "+ resVo);
+//				System.out.println("####### instance_id : "+ instance_id);
+//				System.out.println("####### result_flag : "+ result_flag);
+//				System.out.println("####### result_msg :: "+ result_msg);
+//				System.out.println("####### success ::::: "+ success);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		});
+	}
+
+	@Override
+	public int selectScheduleRunHistCnt(ScheduleRunHistVO scheduleRunHistVO) throws Exception {
+		return scheduleDAO.selectScheduleRunHistCnt(scheduleRunHistVO);
+	}
+
+	@Override
+	public List<ScheduleRunHistVO> selectScheduleRunHistList(ScheduleRunHistVO scheduleRunHistVO) throws Exception {
+		return scheduleDAO.selectScheduleRunHistList(scheduleRunHistVO);
+	}
+	
+	@Override
+	public int selectScheduleIfCnt(ScheduleVO scheduleVO) throws Exception {
+		return scheduleDAO.selectScheduleIfCnt(scheduleVO);
+	}
+
+	@Override
+	public List<RunningInterfaceVO> selectScheduleIfList(ScheduleVO scheduleVO) throws Exception {
+		return scheduleDAO.selectScheduleIfList(scheduleVO);
+	}
+}
+
+-3. 스케줄 핸들러
+/*
+ * Copyright Hyundai AutoEver.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai AutoEver. ("Confidential Information").
+ */
+package com.xconnect.eai.server.service.processor.system.impl; 
+
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.Callable;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.xconnect.eai.server.service.processor.system.impl.vo.ScheduleJobVO;
+import com.xconnect.eai.server.service.processor.system.impl.vo.ScheduleJobVO.COMMAND;
+import com.xconnect.eai.web.management.schedule.vo.ScheduleVO;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.service.processor.system.impl 
+ *    |_ ScheduleJobHandler.java
+ * 
+ * </pre>
+ * @date : 2020. 2. 13. 오후 2:25:41
+ * @version : 
+ * @author : A931744
+ */
+public class ScheduleJobHandler implements Callable<ScheduleJobVO>, Serializable {
+
+	private static final long serialVersionUID = 1L;
+	private static final Logger LOG = LoggerFactory.getLogger(ScheduleJobHandler.class);
+
+	private ScheduleJobVO scheduleVo;
+	
+	protected ScheduleJobHandler() {
+		// prevent default constructor
+	}
+	public ScheduleJobHandler(ScheduleJobVO vo) {
+		this.scheduleVo = vo;
+	}
+
+	@Override
+	public ScheduleJobVO call() throws Exception {
+		
+		ScheduleJobVO vo = null;
+		
+		COMMAND command = scheduleVo.getCommand();
+		switch (command) {
+		case REGIST:
+			vo = regist(scheduleVo);
+			break;
+			
+		case RUNONCE:
+			vo = runonce(scheduleVo);
+			break;
+			
+		case DELETE:
+			vo = delete(scheduleVo);
+			break;
+			
+		case UPDATE:
+			vo = delete(scheduleVo);
+			vo = regist(scheduleVo);
+			break;
+
+		default:
+			vo = new ScheduleJobVO();
+			vo.setResult(false);
+			vo.setResultMsg("Fail :: 지원되지 않는 Command");
+			break;
+		}
+		
+		return vo;
+	}
+
+	private ScheduleJobVO regist(ScheduleJobVO vo) {
+		ScheduleJobVO resultVo = new ScheduleJobVO();
+		try {
+			ScheduleJobManagerImpl.makeScheduleJob(convertVo2Map(vo.getScheduleInfoVo()));
+			resultVo.setResultMsg("Success");
+			resultVo.setResult(true);
+			
+			return resultVo;
+		} catch (Exception e) {
+			e.printStackTrace();
+			resultVo.setResultMsg("Fail :: " + e.getMessage());
+			resultVo.setResult(false);
+			return resultVo;
+		}
+	}
+	
+	private ScheduleJobVO runonce(ScheduleJobVO vo) {
+		ScheduleJobVO resultVo = new ScheduleJobVO();
+		try {
+			boolean result = ScheduleJobManagerImpl.runScheduleOnce(convertVo2Map(vo.getScheduleInfoVo()));
+			resultVo.setResultMsg(result ? "Success" : "Fail");
+			resultVo.setResult(result);
+			
+			return resultVo;
+		} catch (Exception e) {
+			e.printStackTrace();
+			resultVo.setResultMsg("Fail :: " + e.getMessage());
+			resultVo.setResult(false);
+			return resultVo;
+		}
+	}
+
+	private ScheduleJobVO delete(ScheduleJobVO vo) {
+		ScheduleJobVO resultVo = new ScheduleJobVO();
+		try {
+			boolean result = ScheduleJobManagerImpl.removeSchedule(vo.getScheduleInfoVo().getScheduleNo());
+			resultVo.setResultMsg(result ? "Success" : "Fail");
+			resultVo.setResult(result);
+
+			return resultVo;
+		} catch (Exception e) {
+			e.printStackTrace();
+			resultVo.setResultMsg("Fail :: " + e.getMessage());
+			resultVo.setResult(false);
+			return resultVo;
+		}
+	}
+
+	private Map<String, Object> convertVo2Map(ScheduleVO vo) {
+		try {
+			Map<String, Object> scheduleInfoMap = new HashMap<>();
+			scheduleInfoMap.put("SCHEDULE_NO", vo.getScheduleNo());
+			scheduleInfoMap.put("SCHEDULE_NM", vo.getScheduleNm());
+			scheduleInfoMap.put("SCHEDULE_TYPE_CD", vo.getScheduleTypeCd());
+			scheduleInfoMap.put("PROC_SVR_ID", vo.getProcSvrId());
+			scheduleInfoMap.put("EXEC_CMD", vo.getExecCmd());
+			scheduleInfoMap.put("START_DT", vo.getStartDt());
+			scheduleInfoMap.put("END_DT", vo.getEndDt());
+			scheduleInfoMap.put("PARALLEL_PROC_YN", vo.getParallelProcYn());
+			scheduleInfoMap.put("CRON_JOB_TEXT", vo.getCronJobText());
+			scheduleInfoMap.put("WEEKEND_PROC_YN", vo.getWeekendProcYn());
+			scheduleInfoMap.put("INTERVALMILI_SEC", vo.getIntervalmiliSec());
+			scheduleInfoMap.put("REPEAT_CNT", vo.getRepeatCnt());
+			scheduleInfoMap.put("LAST_ERROR_PROC_YN", vo.getLastErrorProcYn());
+			scheduleInfoMap.put("IF_ID", vo.getIfId());
+			scheduleInfoMap.put("IF_VER_NO", vo.getIfVerNo());
+			
+			return scheduleInfoMap;
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+}
+
+-4. 스케줄 매니저(실제작업)
+/*
+ * Copyright Hyundai AutoEver.
+ * All rights reserved.
+ * 
+ * This software is the confidential and proprietary information
+ * of Hyundai AutoEver. ("Confidential Information").
+ */
+package com.xconnect.eai.server.service.processor.system.impl; 
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TimeZone;
+import java.util.concurrent.CompletableFuture;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.Endpoint;
+import org.apache.camel.Exchange;
+import org.apache.camel.Processor;
+import org.apache.camel.Route;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.impl.DefaultExchange;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.xconnect.eai.server.common.constant.SystemCommonConstants;
+import com.xconnect.eai.server.common.dao.service.component.CamelComponentDAO;
+import com.xconnect.eai.server.common.exception.XConnectEaiServerException;
+import com.xconnect.eai.server.common.util.CamelHelper;
+import com.xconnect.eai.server.common.util.CommonUtils;
+import com.xconnect.eai.server.common.vo.InterfaceRequestMessage;
+import com.xconnect.eai.server.common.vo.InterfaceResponseMessage;
+import com.xconnect.eai.server.service.processor.system.ScheduleLogger;
+
+/**
+ * <pre>
+ * com.xconnect.eai.server.service.processor.system.impl 
+ *    |_ ScheduleJobManagerImpl.java
+ * 
+ * </pre>
+ * @date : 2019. 12. 27. 오전 9:37:26
+ * @version : 
+ * @author : A931744
+ */
+//@Component("scheduleJobManagerImpl")
+public class ScheduleJobManagerImpl {
+
+	private static final Logger LOG = LoggerFactory.getLogger(ScheduleJobManagerImpl.class);
+
+	//@Value("${SERVER_ID: SVR0000001}")
+	private static String thisServerID = "";
+
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : TB_DEV_SCHEDULE_INFO 테이블의 정보를 토대로 스케줄 JOB을 생성한다.
+	 * 2. 처리내용 : 
+	 * </pre>
+	 * @Method Name : makeScheduleJob
+	 * @date : 2019. 12. 27.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 27.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param scheduleInfoMap
+	 * @throws Exception
+	 */
+	@SuppressWarnings("unused")
+	public static void makeScheduleJob(Map<String, Object> scheduleInfoMap) throws Exception {
+		try {
+			thisServerID = CamelHelper.getInstance().getServerId();
+			
+			// CamelContext를 가져온다.
+			CamelContext ctx = CamelHelper.getInstance().getContext().getBean(SystemCommonConstants.CAMEL_CONTEXT_ID, CamelContext.class);
+
+			String schedule_no				= CommonUtils.strNvl(scheduleInfoMap.get("SCHEDULE_NO"), "0");			// 스케줄 No
+			String schedule_name			= CommonUtils.strNvl(scheduleInfoMap.get("SCHEDULE_NM"), "");			// 스케줄 Name
+			String schedule_type_cd			= CommonUtils.strNvl(scheduleInfoMap.get("SCHEDULE_TYPE_CD"), "C");		// 스케줄 타입 코드 (C : complex - cron job, R : Repeat - 재실행)
+			String server_id				= CommonUtils.strNvl(scheduleInfoMap.get("PROC_SVR_ID"), "");			// 실행 서버 ID
+			String exec_cmd					= CommonUtils.strNvl(scheduleInfoMap.get("EXEC_CMD"), "");				// 실행CMD
+			String start_dt					= CommonUtils.strNvl(scheduleInfoMap.get("START_DT"), "");				// 실행일자
+			String end_dt					= CommonUtils.strNvl(scheduleInfoMap.get("END_DT"), "");				// 종료일자
+			String parallel_proc_yn			= CommonUtils.strNvl(scheduleInfoMap.get("PARALLEL_PROC_YN"), "");		// 중복 실행 여부
+			String weekend_proc_yn			= CommonUtils.strNvl(scheduleInfoMap.get("WEEKEND_PROC_YN"), "");		// 주말 실행 여부
+			String interval_milli_sec		= CommonUtils.strNvl(scheduleInfoMap.get("INTERVALMILI_SEC"), "");		// 실행간격 밀리초
+			int    repeat_cnt				= Integer.parseInt(CommonUtils.strNvl(scheduleInfoMap.get("REPEAT_CNT"), "0"));	// 반복회수
+			String last_error_proc_yn		= CommonUtils.strNvl(scheduleInfoMap.get("LAST_ERROR_PROC_YN"), "");	// 오류시 중단여부
+			String interface_id				= CommonUtils.strNvl(scheduleInfoMap.get("IF_ID"), "");					// 인터페이스 아이디
+			String interface_ver			= CommonUtils.strNvl(scheduleInfoMap.get("IF_VER_NO"), "");				// 인터페이스 버전
+			String schedule_target_if_name	= interface_id + "_" + interface_ver;									// 대상 인터페이스 이름 조합 (IFID_IFVER)
+			
+
+			//if(!thisServerID.equalsIgnoreCase(server_id)) return;			// 이 서버에서 실행할 스케줄 JOB이 아니면 skip
+			LOG.debug(" #### makeScheduleJob (스케줄 Job을 생성합니다...) >> " + scheduleInfoMap);
+			// 고유 식별 라우터 ID를 생성한다.
+			final String _SCHEDULE_ROUTER_ID_ = "XCONNECTOR_SCHEDULE_" + schedule_no;
+			
+			Route prev_router = ctx.getRoute(_SCHEDULE_ROUTER_ID_);
+			// 이전에 라우터가 존재하면 라우터 삭제
+			if(prev_router != null) {
+				ctx.stopRoute(_SCHEDULE_ROUTER_ID_);
+				ctx.removeRoute(_SCHEDULE_ROUTER_ID_);
+			}
+			
+			// Route Builder 시작
+			ctx.addRoutes(new RouteBuilder() {
+				@Override
+				public void configure() throws Exception {
+					//////////////////////////////////////////////////////////////////////////////////////////
+					// I. CronJob 실행일때 (Complex type)
+					//////////////////////////////////////////////////////////////////////////////////////////
+					if(schedule_type_cd.equalsIgnoreCase("C")) {			// Complex type :: Cron job
+						String cron_job = scheduleInfoMap.get("CRON_JOB_TEXT").toString().replaceAll(" ", "+");
+						from("quartz2://INTERFACE_ROUTE_SCHEDULE/" + _SCHEDULE_ROUTER_ID_ + "?cron=" + cron_job)
+						.routeId(_SCHEDULE_ROUTER_ID_)
+						.process(new Processor() {
+							@Override
+							public void process(Exchange exchange) throws Exception {
+								LOG.debug(" #### makeScheduleJob [Complex] Schedule Call!! >> IF_ID = " + schedule_target_if_name);
+								// Schedule History Logging을 위한 property set
+								exchange.setProperty("SCH_HISTORY_LOGGING", true);
+								exchange.setProperty("SCH_SCHEDULE_NO", schedule_no);
+								exchange.setProperty("SCH_START_TS", System.currentTimeMillis());
+								if(!checkExeScheduleServer(server_id)) {
+									exchange.getIn().setHeader("STOP_SCHEDULE_FLAG", true);
+								} else {
+									// 실행 CMD가 존재할때는 command를 실행하고 종료한다.
+									if(!exec_cmd.isEmpty()) {
+										execCommand(exec_cmd);
+										exchange.getIn().setHeader("STOP_SCHEDULE_FLAG", true); // 라우터 호출하지 않음
+									}
+								}
+							}
+						})
+						.filter().simple("${in.header.STOP_SCHEDULE_FLAG} == true")
+							.stop().end()
+						.to("direct:" + schedule_target_if_name)
+						;
+						
+					//////////////////////////////////////////////////////////////////////////////////////////
+					// II. 반복 실행일때 (Repeat type)
+					//////////////////////////////////////////////////////////////////////////////////////////
+					} else if(schedule_type_cd.equalsIgnoreCase("R")) {		// Repeat type
+
+						LOG.debug(" #### makeScheduleJob [Repeat Type] Schedule Call!! >> IF_ID = " + schedule_target_if_name + ", Command = " + exec_cmd);
+						String __schedule_str = makeTimeSchedule(scheduleInfoMap);
+						if(__schedule_str == null) return;
+
+						from(__schedule_str)	// 상황에 맞는 Timer
+						.routeId(_SCHEDULE_ROUTER_ID_)
+						//////////////////////////////////////
+						// 실행 Command 가 있을때 command 실행
+						.process(new Processor() {
+							@Override
+							public void process(Exchange exchange) throws Exception {
+								if(!checkExeScheduleServer(server_id)) {
+									exchange.getIn().setHeader("STOP_SCHEDULE_FLAG", true);
+								} else {
+									// 실행 CMD가 존재할때는 command를 실행하고 종료한다.
+									if(!exec_cmd.isEmpty()) {
+										execCommand(exec_cmd);
+										exchange.getIn().setHeader("STOP_SCHEDULE_FLAG", true); // 라우터 호출하지 않음
+									}
+								}
+							}
+						})
+						.filter().simple("${in.header.STOP_SCHEDULE_FLAG} == true")
+							.stop().end()
+						//////////////////////////////////////
+						// 아닐때는 라우터 호출
+						.process(new Processor() {
+							@SuppressWarnings("unchecked")
+							@Override
+							public void process(Exchange exchange) throws Exception {
+								// Master Server 만 스케줄 실행
+								if(!CamelHelper.getInstance().isMaster()) return;
+								
+								// 실행이력 기록을 위한 Params 셋팅
+								SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+								sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
+								Map<String, Object> paramMap = new HashMap<>();
+								paramMap.put("SCHEDULE_NO", schedule_no);
+								paramMap.put("START_DT", sdf.format(new Date()) );
+								paramMap.put("SVR_ID", thisServerID);
+								
+								Map<String, Object> schInfoMap = CamelHelper.getInstance().getIfScheduleJobInfoMap().get(_SCHEDULE_ROUTER_ID_);
+								CompletableFuture<Exchange> future = (schInfoMap != null) ? (CompletableFuture<Exchange>)schInfoMap.get("__FUTURE__") : null;
+								
+								boolean __exec_schedule_job = false;
+								// future == null (처음 실행) 혹은 future.isDone (이전 작업 끝났음) 일때 스케줄 실행함
+								if( future == null || (future != null && future.isDone()) ) {
+									__exec_schedule_job = true;
+								
+								// 이전 스케줄 작업이 끝나지 않았을때 처리
+								} else if(!future.isDone()) {
+									if(parallel_proc_yn.equalsIgnoreCase("Y")) __exec_schedule_job = true;	// 중복 실행여부가 Y로 셋팅되어있으면 이전스케줄 완료여부 상관없이 스케줄 실행함
+									else __exec_schedule_job = false;										// 아니면 이번엔 스케줄 실행하지 않음
+								}
+								
+								// 현재 시간이 end_dt 보다 지났는지 여부 판단.
+								long endTmMil = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(end_dt).getTime();
+								long curTmMil = new Date().getTime();
+								if(curTmMil > endTmMil) {
+									if(future != null && !future.isDone()) future.get();					// Job이 완료될때 까지 기다린다.
+									ctx.stopRoute(_SCHEDULE_ROUTER_ID_);
+									ctx.removeRoute(_SCHEDULE_ROUTER_ID_);
+									return;
+								}
+								
+								// 오류시 중단여부가 Y로 셋팅되어있으면 이전 JOB의 오류여부를 판단하여 스케줄 계속 실행여부 결정
+								if(last_error_proc_yn.equalsIgnoreCase("Y") && (future != null && future.isCompletedExceptionally())) {
+									// 오류가 난 경우 이므로 스케줄 삭제후 리턴
+									ctx.stopRoute(_SCHEDULE_ROUTER_ID_);
+									ctx.removeRoute(_SCHEDULE_ROUTER_ID_);
+									return;
+								}
+								
+								// 현재가 주말(토,일)이고, 주말실행여부가 N이면 skip
+								if(CommonUtils.isWeekEnd() && weekend_proc_yn.equalsIgnoreCase("N")) return;
+								
+								// 위의 모든 경우가 아닐때 스케줄 실행 (해당 인터페이스 라우터 call)
+								if(__exec_schedule_job) {
+									Route target_route = ctx.getRoute(schedule_target_if_name);
+									Endpoint target_endpoint = target_route.getEndpoint();
+									Exchange target_exchange = target_endpoint.createExchange();
+									CompletableFuture<Exchange> futureExch = CamelHelper.getInstance().getProducerTemplate().asyncSend(target_endpoint, target_exchange);
+									// 다음 스케줄시 이번 상태 체크를 위해 CamelHelper의 전역변수로 future 저장 (key :: 인터페이스 아이디 _버전)
+									Map<String, Object> schFutureMap = new HashMap<String, Object>();
+									schFutureMap.put("__JOB_FINISHED_TIME__", "");	// JOB 끝난시간
+									schFutureMap.put("__FUTURE__", futureExch);			// Exchange Future
+									CamelHelper.getInstance().getIfScheduleJobInfoMap().put(_SCHEDULE_ROUTER_ID_, schFutureMap);
+									// Schedule Job 이 끝났을때 Job finished time을 셋팅한다.
+									futureExch.thenRun(() -> {
+										if(CamelHelper.getInstance().getIfScheduleJobInfoMap().get(_SCHEDULE_ROUTER_ID_) != null) {
+											CamelHelper.getInstance().getIfScheduleJobInfoMap().get(_SCHEDULE_ROUTER_ID_).put("__JOB_FINISHED_TIME__", 
+													new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()));
+
+											// 스케줄 실행이력...
+											paramMap.put("END_DT", sdf.format(new Date()) );
+											try {
+												Exception exception = futureExch.get().getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
+												paramMap.put("PROC_RESULT_CD", exception == null ? "S" : "F");
+												String printedStack = CommonUtils.getPrintStackTrace(exception);
+												paramMap.put("EXCEPTION", printedStack.substring(0, printedStack.length() > 1999 ? 1999 : printedStack.length()) );
+												CamelComponentDAO componentDao = CamelHelper.getInstance().getCamelComponentDAO();
+												componentDao.insertScheduleHistory(paramMap);
+											} catch (Exception e) {}
+
+										} else {
+											Map<String, Object> tmp = new HashMap<String, Object>();
+											tmp.put("__JOB_FINISHED_TIME__", new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()));
+											tmp.put("__FUTURE__", futureExch);
+											CamelHelper.getInstance().getIfScheduleJobInfoMap().put(_SCHEDULE_ROUTER_ID_, tmp);
+										}
+									});
+								}
+							}
+						});
+						
+					//////////////////////////////////////////////////////////////////////////////////////////
+					// III. Batch JOB일때 (Batchjob type)
+					//////////////////////////////////////////////////////////////////////////////////////////
+					} else if(schedule_type_cd.equalsIgnoreCase("J")) {			// Batch JOB type :: J -> Command Exec.
+						String cron_job = scheduleInfoMap.get("CRON_JOB_TEXT").toString().replaceAll(" ", "+");
+						from("quartz2://INTERFACE_ROUTE_SCHEDULE/" + _SCHEDULE_ROUTER_ID_ + "?cron=" + cron_job)
+						.routeId(_SCHEDULE_ROUTER_ID_)
+						.process(new Processor() {
+							@Override
+							public void process(Exchange exchange) throws Exception {
+								LOG.debug(" #### makeScheduleJob [Batch JOB] Schedule Call!! >> Schedule No = " + schedule_no);
+								// Schedule History Logging을 위한 property set
+								exchange.setProperty("SCH_HISTORY_LOGGING", true);
+								exchange.setProperty("SCH_SCHEDULE_NO", schedule_no);
+								exchange.setProperty("SCH_START_TS", System.currentTimeMillis());
+								if(!checkExeScheduleServer(server_id)) {
+									exchange.getIn().setHeader("STOP_SCHEDULE_FLAG", true);
+								} else {
+									// 실행 command를 실행하고 종료한다.
+									if(!exec_cmd.isEmpty()) {
+										try {
+											execCommand(exec_cmd);
+											// Schedule Logging (Success) ...
+											InterfaceResponseMessage interfaceMessage = new InterfaceResponseMessage(null);
+											interfaceMessage.setIfResult("S");
+											exchange.getIn().setBody(interfaceMessage);
+											new ScheduleLogger().loggingScheduleHistory(exchange);
+										} catch (Exception e) {
+											e.printStackTrace();
+											// Schedule Logging (Fail) ...
+											InterfaceResponseMessage interfaceMessage = new InterfaceResponseMessage(null);
+											interfaceMessage.setIfResult("E");
+											interfaceMessage.setIfFailMsg(CommonUtils.getPrintStackTrace(e));
+											exchange.getIn().setBody(interfaceMessage);
+											new ScheduleLogger().loggingScheduleHistory(exchange);
+										}
+									}
+								}
+							}
+						})
+						;
+						
+					}
+				}
+			});
+			
+		} catch (Exception e) {
+			LOG.error("[ScheduleJobManagerImpl] >> makeScheduleJob :: Error > " + CommonUtils.getPrintStackTrace(e));
+			throw e;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : 스케줄을 한번만 실행한다.
+	 * 2. 처리내용 : 인터페이스 호출 or 실행 command 둘중 하나를 실행하여 결과를 true/false 로 리턴한다.
+	 * </pre>
+	 * @Method Name : runScheduleOnce
+	 * @date : 2020. 2. 13.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 13.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param scheduleInfoMap
+	 * @return
+	 */
+	@SuppressWarnings("unused")
+	public static boolean runScheduleOnce(Map<String, Object> scheduleInfoMap) throws Exception {
+		try {
+			// CamelContext를 가져온다.
+
+			String schedule_no				= CommonUtils.strNvl(scheduleInfoMap.get("SCHEDULE_NO"), "0");			// 스케줄 No
+			String schedule_name			= CommonUtils.strNvl(scheduleInfoMap.get("SCHEDULE_NM"), "");			// 스케줄 Name
+			String schedule_type_cd			= CommonUtils.strNvl(scheduleInfoMap.get("SCHEDULE_TYPE_CD"), "C");		// 스케줄 타입 코드 (C : complex - cron job, R : Repeat - 재실행)
+			String server_id				= CommonUtils.strNvl(scheduleInfoMap.get("PROC_SVR_ID"), "");			// 실행 서버 ID
+			String exec_cmd					= CommonUtils.strNvl(scheduleInfoMap.get("EXEC_CMD"), "");				// 실행CMD
+			String start_dt					= CommonUtils.strNvl(scheduleInfoMap.get("START_DT"), "");				// 실행일자
+			String end_dt					= CommonUtils.strNvl(scheduleInfoMap.get("END_DT"), "");				// 종료일자
+			String parallel_proc_yn			= CommonUtils.strNvl(scheduleInfoMap.get("PARALLEL_PROC_YN"), "");		// 중복 실행 여부
+			String weekend_proc_yn			= CommonUtils.strNvl(scheduleInfoMap.get("WEEKEND_PROC_YN"), "");		// 주말 실행 여부
+			String interval_milli_sec		= CommonUtils.strNvl(scheduleInfoMap.get("INTERVALMILI_SEC"), "");		// 실행간격 밀리초
+			int    repeat_cnt				= Integer.parseInt(CommonUtils.strNvl(scheduleInfoMap.get("REPEAT_CNT"), "0"));	// 반복회수
+			String last_error_proc_yn		= CommonUtils.strNvl(scheduleInfoMap.get("LAST_ERROR_PROC_YN"), "");	// 오류시 중단여부
+			String interface_id				= CommonUtils.strNvl(scheduleInfoMap.get("IF_ID"), "");					// 인터페이스 아이디
+			String interface_ver			= CommonUtils.strNvl(scheduleInfoMap.get("IF_VER_NO"), "");				// 인터페이스 버전
+			String schedule_target_if_name	= interface_id + "_" + interface_ver;									// 대상 인터페이스 이름 조합 (IFID_IFVER)
+
+			// 현재 서버에서 실행해야하는 스케줄인지 체크
+			if(!checkExeScheduleServer(server_id)) return true;
+			
+			// 실행 Command가 없을때는 라우터 호출
+			if(exec_cmd.isEmpty()) {
+				CamelContext ctx = CamelHelper.getInstance().getContext().getBean(SystemCommonConstants.CAMEL_CONTEXT_ID, CamelContext.class);
+				Exchange exchange = new DefaultExchange(ctx);
+				exchange.setProperty("SCH_HISTORY_LOGGING", true);
+				exchange.setProperty("SCH_SCHEDULE_NO", schedule_no);
+				exchange.setProperty("SCH_START_TS", System.currentTimeMillis());
+				
+				InterfaceResponseMessage interfaceMessage = new InterfaceResponseMessage(null);
+				
+				Route target_route = ctx.getRoute(schedule_target_if_name);
+				Endpoint target_endpoint = target_route.getEndpoint();
+				boolean result = true;
+				try {
+					Object resultObject = CamelHelper.getInstance().getProducerTemplate().requestBody(target_endpoint, new InterfaceRequestMessage());
+					if(resultObject instanceof InterfaceResponseMessage) interfaceMessage.setBody( ((InterfaceResponseMessage)resultObject).getBody() );
+					interfaceMessage.setIfResult(resultObject != null ? "S" : "F");
+					interfaceMessage.setIfFailMsg("");
+					//return true;
+				} catch (Exception e) {
+					interfaceMessage.setIfResult("F");
+					interfaceMessage.setIfFailMsg(e.getMessage());
+					result = false;
+				}
+				// 결과 schedule logging
+				exchange.getIn().setBody(interfaceMessage);
+				new ScheduleLogger().loggingScheduleHistory(exchange);
+				
+				return result;
+			// 실행 Command가 있을때는 command 실행
+			} else {
+				CamelContext ctx = CamelHelper.getInstance().getContext().getBean(SystemCommonConstants.CAMEL_CONTEXT_ID, CamelContext.class);
+				Exchange exchange = new DefaultExchange(ctx);
+				exchange.setProperty("SCH_HISTORY_LOGGING", true);
+				exchange.setProperty("SCH_SCHEDULE_NO", schedule_no);
+				exchange.setProperty("SCH_START_TS", System.currentTimeMillis());
+
+				InterfaceResponseMessage interfaceMessage = new InterfaceResponseMessage(null);
+				
+				// Command 실행
+				boolean result = true;
+				try {
+					result = execCommand(exec_cmd);
+					interfaceMessage.setIfResult(result ? "S" : "F");
+					interfaceMessage.setIfFailMsg("");
+				} catch (Exception e) {
+					interfaceMessage.setIfResult("F");
+					interfaceMessage.setIfFailMsg(e.getMessage());
+				} 
+				
+				// 결과 schedule logging
+				exchange.getIn().setBody(interfaceMessage);
+				new ScheduleLogger().loggingScheduleHistory(exchange);
+				
+				return result;
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw e;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : 스케줄 일련번호를 입력받아 해당 스케줄을 삭제한다.
+	 * 2. 처리내용 : camel router에서 해당 라우터 삭제후 true/false 리턴
+	 * </pre>
+	 * @Method Name : removeSchedule
+	 * @date : 2020. 2. 13.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 2. 13.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param schedule_no
+	 * @return
+	 */
+	public static boolean removeSchedule(int schedule_no) throws Exception {
+		try {
+			// 고유 식별 라우터 ID를 생성한다.
+			final String _SCHEDULE_ROUTER_ID_ = "XCONNECTOR_SCHEDULE_" + schedule_no;
+			CamelContext ctx = CamelHelper.getInstance().getContext().getBean(SystemCommonConstants.CAMEL_CONTEXT_ID, CamelContext.class);
+
+			Route route = ctx.getRoute(_SCHEDULE_ROUTER_ID_);
+			if(route != null) {
+				ctx.stopRoute(_SCHEDULE_ROUTER_ID_);
+				ctx.removeRoute(_SCHEDULE_ROUTER_ID_);
+				return true;
+			} else {
+				return false;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw e;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : 인터페이스 스케줄 테이블 옵션에 맞게 timer 컴포넌트 URI를 구성한다.
+	 * 2. 처리내용 : 스케줄 타입코드가 'R'일 경우에 주말실행여부 및 start dt, end dt 판단하여 'timer://INTERFACE_ROUTE_SCHEDULE_TIMER?options...' 형식으로 URI 조합
+	 * </pre>
+	 * @Method Name : makeTimeSchedule
+	 * @date : 2019. 12. 27.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2019. 12. 27.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 *
+	 * @param scheduleInfoMap
+	 * @return
+	 * @throws Exception
+	 */
+	private static String makeTimeSchedule(Map<String, Object> scheduleInfoMap) throws Exception {
+		String __timer_str = "";
+		try {
+			String start_dt					= CommonUtils.strNvl(scheduleInfoMap.get("START_DT"), "");				// 실행일자
+			String end_dt					= CommonUtils.strNvl(scheduleInfoMap.get("END_DT"), "2100-12-31");		// 종료일자
+			String interval_milli_sec		= CommonUtils.strNvl(scheduleInfoMap.get("INTERVALMILI_SEC"), "200000");// 실행간격 밀리초
+			int    repeat_cnt				= Integer.parseInt(CommonUtils.strNvl(scheduleInfoMap.get("REPEAT_CNT"), "-1"));	// 반복회수
+
+//			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+			
+			long strTmMil = sdf.parse(start_dt).getTime();
+			long endTmMil = sdf.parse(end_dt).getTime();
+			long curTmMil = new Date().getTime();
+			
+			// 이미 종료일자가 지났으면 끝낸다.
+			if(curTmMil > endTmMil) return null;
+			
+			// 아직 시작일자가 도래하지 않았으면 delay time을 계산한다.
+			long delayTmMil = 0;
+			if(curTmMil < strTmMil) {
+				delayTmMil = strTmMil - curTmMil;
+			}
+
+			__timer_str = "timer://INTERFACE_ROUTE_SCHEDULE_TIMER?period=" + interval_milli_sec + "&delay=" + delayTmMil + ( (repeat_cnt > 0) ? ("&repeatCount=" + repeat_cnt) : "");
+
+			return __timer_str;
+			
+		} catch(ParseException pe) { 
+			LOG.error("[ScheduleJobManagerImpl] >> makeTimeSchedule :: Error > " + CommonUtils.getPrintStackTrace(pe));
+			throw new XConnectEaiServerException("시작일시 혹은 종료일시가 명확하지 않습니다.", XConnectEaiServerException.CAMEL_ROUTER_PARAMETER_FAILED);
+		} catch (Exception e) {
+			LOG.error("[ScheduleJobManagerImpl] >> makeTimeSchedule :: Error > " + CommonUtils.getPrintStackTrace(e));
+			return null;
+		}
+	}
+	
+	/**
+	 * 외부 Command 실행
+	 */
+	private static boolean execCommand(String command) throws Exception {
+		try {
+			Process process = Runtime.getRuntime().exec(command);
+
+			StringBuilder output = new StringBuilder();
+			BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+
+			String line;
+			while ((line = reader.readLine()) != null) {
+				output.append(line + "\n");
+			}
+
+			int exitVal = process.waitFor();
+			if (exitVal == 0) {
+				// Success
+				//System.out.println(output);
+				return true;
+			} else {
+				// Error
+				return false;
+			}
+
+		} catch (IOException e) {
+			e.printStackTrace();
+			throw e;
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+			throw e;
+		}
+	}
+	
+	/**
+	 * 
+	 * <pre>
+	 * 1. 개요 : 실행서버를 판단하여 리턴
+	 * 2. 처리내용 : 이 서버에서 실행해야하는 경우 true , 실행해서 안되는 경우는 false 리턴
+	 * </pre>
+	 * @Method Name : checkExeScheduleServer
+	 * @date : 2020. 4. 1.
+	 * @author : A931744
+	 * @history : 
+	 * <pre>
+	 *	-----------------------------------------------------------------------
+	 *	변경일		작성자				변경내용  
+	 *	----------- ------------------- ---------------------------------------
+	 *	2020. 4. 1.		A931744				최초 작성 
+	 *	-----------------------------------------------------------------------
+	 * </pre>
+	 * @param proc_server_id
+	 * @return
+	 */
+	private static boolean checkExeScheduleServer(String proc_server_id) {
+		try {
+			thisServerID = CamelHelper.getInstance().getServerId();
+			
+			// ALL 타입의 경우 모든 서버에서 실행
+			if(proc_server_id.equalsIgnoreCase("ALL")) {
+				return true;
+			// ANY 타입의 경우 Master 서버만 실행
+			} else if(proc_server_id.equalsIgnoreCase("ANY")) {
+				return CamelHelper.getInstance().isMaster() ? true : false;
+			// 그외 특정서버 ID가 지정되었을때는 그 서버에서만 실행
+			} else {
+				return proc_server_id.equalsIgnoreCase(thisServerID) ? true : false;
+			}
+			
+		} catch (Exception e) {
+			LOG.error("[ScheduleJobManagerImpl] >> checkExecServer > Error! :: {}", CommonUtils.getPrintStackTrace(e));
+			return false;
+		}
+	}
+}
+
