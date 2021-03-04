@@ -1,0 +1,7 @@
+start
+
+ elasticsearch -d -p pid
+
+stop 
+
+pkill -F pid
