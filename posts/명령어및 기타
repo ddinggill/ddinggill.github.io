@@ -1,0 +1,24 @@
+start
+
+ elasticsearch -d -p pid
+
+stop 
+
+pkill -F pid
+
+2. mysql 접속
+mysql -uroot
+3. xconnector 접속
+use xconnector
+
+메이븐 설정
+
+spring-boot:run
+
+-Dserver.home=C:\Users\A932060\eclipse-workspace\XConnect_Server_IC\dist 
+-DLOGGING_LEVEL=DEBUG 
+-DLOG_PATH=C:\Users\A932060\eclipse-workspace\XConnect_Server_IC\dist\logs
+-Dserver.tmpdir=C:\Users\A932060\eclipse-workspace\XConnect_Server_IC\dist\tmp
+-Dspring.profiles.active=dev
+-Drmi.port=38088 
+-Djava.library.path=C:\Users\A932060\eclipse-workspace\XConnect_Server_IC\dist\lib
