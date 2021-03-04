@@ -5,3 +5,8 @@ start
 stop 
 
 pkill -F pid
+
+2. mysql 접속
+mysql -uroot
+3. xconnector 접속
+use xconnector
