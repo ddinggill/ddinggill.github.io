@@ -22,3 +22,45 @@ spring-boot:run
 -Dspring.profiles.active=dev
 -Drmi.port=38088 
 -Djava.library.path=C:\Users\A932060\eclipse-workspace\XConnect_Server_IC\dist\lib
+
+1. NginX 설치
+-HAP_PRD_WEB1, 2에다가 설치
+-centos 버전 확인해서 거기에 맞는 nginx 설치하고 뜨는거 확인하고,
+-기존 개발 WEB서버의 nginx conf파일 끌어와서 복사해서 다시 켜야함
+
+-특정포트 확인
+netstat -nap | grep LISTEN,  netstat -nap | grep 80
+-nginx 상태확인
+systemctl status nginx
+-nginx 스타트
+systemctl start nginx
+-기존 아파치 80포트 죽이기
+sudo fuser -k 80/tcp
+-nginx 로그 /var/log/nginx/error.log
+-방화벽 열기
+firewall-cmd --permanent --zone=public --add-port=80/tcp
+firewall-cmd --reload
+firewall-cmd --list-ports
+
+서버 시작 : sudo systemctl start nginx
+서버 자동 시작 등록 : sudo systemctl enable nginx
+서버 상태 확인 : sudo systemctl status nginx
+서버 정지 : sudo systemctl stop nginx
+서버 재시작 : sudo systemctl restart nginx
+설정 리로드 : sudo systemctl reload nginx
+
+2.app서버 설치
+-hapadm계정만들고, 자바깔고, Dist기존서버 구조 똑같이 가져와서 설치, lib말고는 따로 가져와서 설치
+-프로퍼티 파일에 wpc이미지 경로 바꾸고 (/nfs참고)
+
+그룹확인 cat /etc/group
+유저확인 cat /etc/passwd
+
+-gid 할당하여 그룹 생성
+sudo groupadd -g 2001 hapadm
+                        그룹id, 그룹명
+-사용자 생성
+sudo useradd -d /home/appadm -g 2001 -u 2001 hapadm
+                       홈디렉토리         그룹id   유저id 유저명
+-비밀번호 설정
+sudo passwd hapadm
